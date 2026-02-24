@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import Navbar from "./Navbar";
 import AssetForm from "./AssetForm";
 import StatsCards from "./StatsCards";
+import NotificationContainer, { showNotification, showConfirmDialog } from "./components/Notification";
 import * as XLSX from "xlsx";
 import { downloadCOAFile, generateCOAHTML } from "./coaGenerator";
 import { 
@@ -32,6 +33,10 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState("");
   const [editingAsset, setEditingAsset] = useState(null);
   const [selectedAssets, setSelectedAssets] = useState([]);
+  
+  // Notification states
+  const [notifications, setNotifications] = useState([]);
+  const [confirmDialog, setConfirmDialog] = useState({ show: false, message: '', onConfirm: null, onCancel: null });
   
   // Modal states
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -156,18 +161,25 @@ export default function App() {
 
   // Delete asset
   const deleteAsset = async (id) => {
-    if (window.confirm("Are you sure you want to delete this asset?")) {
-      try {
-        const response = await fetch(`http://localhost:4000/api/assets/${id}`, { method: "DELETE" });
-        if (response.ok) {
-          setSelectedAssets(prev => prev.filter(aid => aid !== id));
-          fetchAssets();
-          fetchAllData();
+    showConfirmDialog(
+      "Are you sure you want to delete this asset? This action cannot be undone.",
+      async () => {
+        try {
+          const response = await fetch(`http://localhost:4000/api/assets/${id}`, { method: "DELETE" });
+          if (response.ok) {
+            setSelectedAssets(prev => prev.filter(aid => aid !== id));
+            fetchAssets();
+            fetchAllData();
+            showNotification("Asset has been deleted successfully.", "success");
+          } else {
+            showNotification("Failed to delete asset. Please try again.", "error");
+          }
+        } catch {
+          showNotification("Failed to delete asset. Please check your connection.", "error");
         }
-      } catch {
-        alert("Failed to delete asset");
-      }
-    }
+      },
+      () => {}
+    );
   };
 
   // Create transfer
@@ -180,14 +192,14 @@ export default function App() {
         body: JSON.stringify(transferForm)
       });
       if (response.ok) {
-        alert("Transfer record created successfully!");
+        showNotification("Transfer record created successfully!", "success");
         setShowTransferModal(false);
         setTransferForm({ assetId: '', fromOffice: '', toOffice: '', transferDate: '', transferReason: '', transferredBy: '', receivedBy: '' });
         fetchAssets();
         fetchAllData();
       }
     } catch {
-      alert("Error creating transfer");
+      showNotification("Error creating transfer. Please try again.", "error");
     }
   };
 
@@ -201,14 +213,14 @@ export default function App() {
         body: JSON.stringify(disposalForm)
       });
       if (response.ok) {
-        alert("Disposal record created successfully!");
+        showNotification("Disposal record created successfully!", "success");
         setShowDisposalModal(false);
         setDisposalForm({ assetId: '', disposalDate: '', disposalMethod: '', disposalReason: '', proceeds: 0, bookValueAtDisposal: 0, approvedBy: '' });
         fetchAssets();
         fetchAllData();
       }
     } catch {
-      alert("Error creating disposal");
+      showNotification("Error creating disposal. Please try again.", "error");
     }
   };
 
@@ -217,11 +229,11 @@ export default function App() {
     try {
       const response = await fetch("http://localhost:4000/api/depreciation-log/generate-all", { method: "POST" });
       if (response.ok) {
-        alert("Depreciation log generated successfully!");
+        showNotification("Depreciation log generated successfully!", "success");
         fetchAllData();
       }
     } catch {
-      alert("Error generating depreciation log");
+      showNotification("Error generating depreciation log. Please try again.", "error");
     }
   };
 
@@ -311,7 +323,7 @@ export default function App() {
       a.click();
     } catch (err) {
       console.error("Error with template:", err);
-      alert("Template file not found or error. Downloading with default format instead.");
+      showNotification("Template file not found. Downloading with default format instead.", "warning");
       exportToCSV();
     }
     setShowDownloadOptions(false);
@@ -359,7 +371,7 @@ export default function App() {
     const printWindow = window.open('', '_blank');
     
     if (!printWindow) {
-      alert("Please allow popups to download the PDF");
+      showNotification("Please allow popups to download the PDF", "warning");
       return;
     }
     
@@ -438,6 +450,12 @@ export default function App() {
 
   return (
     <div className="scroll-smooth bg-gradient-to-br from-green-50 via-gray-50 to-green-100 min-h-screen">
+      <NotificationContainer 
+        notifications={notifications} 
+        setNotifications={setNotifications} 
+        confirmDialog={confirmDialog} 
+        setConfirmDialog={setConfirmDialog} 
+      />
       <Navbar />
 
       {/* Dashboard Section */}
@@ -1155,3 +1173,5 @@ export default function App() {
     </div>
   );
 }
+
+

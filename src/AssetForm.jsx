@@ -1,8 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ppeClassesData, officesData, fundClusters, calculateDepreciation } from "./data/ppeClasses";
+import { showNotification } from "./components/Notification";
 import { CalculatorIcon, CalendarIcon, DocumentTextIcon, BuildingOfficeIcon, ClipboardDocumentListIcon } from "@heroicons/react/24/outline";
 
 export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
+  // Local notification state for form validation alerts
+  const [localNotification, setLocalNotification] = useState(null);
+  const [errors, setErrors] = useState({});
+  const firstErrorRef = useRef(null);
+
+  // Show local notification helper for form validation
+  const showLocalNotification = (message, field = null) => {
+    setLocalNotification(message);
+    if (field && firstErrorRef.current !== field) {
+      firstErrorRef.current = field;
+      setTimeout(() => {
+        const element = document.getElementById(field);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.focus();
+        }
+      }, 100);
+    }
+    setTimeout(() => setLocalNotification(null), 4000);
+  };
+
   // Manual Input Fields
   const [entityName, setEntityName] = useState("");
   const [fundCluster, setFundCluster] = useState("");
@@ -72,6 +94,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
   const handlePPEClassChange = (e) => {
     const selected = e.target.value;
     setPpeClass(selected);
+    setErrors(prev => ({ ...prev, ppeClass: null }));
 
     if (selected && ppeClassesData[selected]) {
       const data = ppeClassesData[selected];
@@ -91,6 +114,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
   const handleCostChange = (e) => {
     const value = e.target.value;
     setUnitCost(value);
+    setErrors(prev => ({ ...prev, unitCost: null }));
     recalculateDepreciation(value, quantity, usefulLife);
   };
 
@@ -192,6 +216,61 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
     e.preventDefault();
     setIsSubmitting(true);
     setSuccessMessage("");
+    firstErrorRef.current = null;
+
+    // Custom validation - check required fields
+    const newErrors = {};
+    let firstErrorField = null;
+
+    if (!entityName) {
+      newErrors.entityName = "Please select an Entity Name";
+      if (!firstErrorField) firstErrorField = "entityName";
+    }
+    if (!fundCluster) {
+      newErrors.fundCluster = "Please select a Fund Cluster";
+      if (!firstErrorField) firstErrorField = "fundCluster";
+    }
+    if (!propertyNumber) {
+      newErrors.propertyNumber = "Please enter a Property Number";
+      if (!firstErrorField) firstErrorField = "propertyNumber";
+    }
+    if (!propertyType) {
+      newErrors.propertyType = "Please select a Property Type";
+      if (!firstErrorField) firstErrorField = "propertyType";
+    }
+    if (!office) {
+      newErrors.office = "Please select an Office/Place";
+      if (!firstErrorField) firstErrorField = "office";
+    }
+    if (!ppeClass) {
+      newErrors.ppeClass = "Please select a PPE Class";
+      if (!firstErrorField) firstErrorField = "ppeClass";
+    }
+    if (!description) {
+      newErrors.description = "Please enter a Property Description";
+      if (!firstErrorField) firstErrorField = "description";
+    }
+    if (!dateAcquired) {
+      newErrors.dateAcquired = "Please select a Date Acquired";
+      if (!firstErrorField) firstErrorField = "dateAcquired";
+    }
+    if (!unitCost || parseFloat(unitCost) <= 0) {
+      newErrors.unitCost = "Please enter a valid Unit Cost";
+      if (!firstErrorField) firstErrorField = "unitCost";
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      setIsSubmitting(false);
+      
+      // Show notification and scroll to first error
+      const errorCount = Object.keys(newErrors).length;
+      const fieldName = newErrors[firstErrorField];
+      showLocalNotification(`Missing ${errorCount} required field(s). First: ${fieldName}`, firstErrorField);
+      return;
+    }
+
+    setErrors({});
 
     const assetData = {
       entityName,
@@ -241,11 +320,11 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
           onAssetSaved();
         }
       } else {
-        alert("Failed to save asset. Please try again.");
+        showNotification("Failed to save asset. Please try again.", "error");
       }
     } catch (error) {
       console.error("Error saving asset:", error);
-      alert("Error connecting to server.");
+      showNotification("Error connecting to server. Please check your connection.", "error");
     } finally {
       setIsSubmitting(false);
     }
@@ -274,12 +353,25 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
     setAccumulatedDepreciation("0");
     setNetBookValue("");
     setRemarks("");
+    setErrors({});
+    setLocalNotification(null);
   };
 
   const ppeOptions = Object.keys(ppeClassesData);
 
   return (
     <div className="w-full max-w-4xl mx-auto">
+      {/* Local Notification Banner */}
+      {localNotification && (
+        <div className="mb-4 alert alert-danger d-flex align-items-center" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" className="bi bi-exclamation-triangle-fill flex-shrink-0 me-2" viewBox="0 0 16 16">
+            <path d="M8.982 1.566a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+          </svg>
+          <span className="me-auto">{localNotification}</span>
+          <button type="button" onClick={() => setLocalNotification(null)} className="btn-close ms-2" aria-label="Close"></button>
+        </div>
+      )}
+
       {/* Success Message */}
       {successMessage && (
         <div className="mb-6 bg-green-100 border-l-4 border-green-500 text-green-700 p-4 rounded-lg flex items-center gap-2">
@@ -304,12 +396,13 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Entity Name <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="entityName"
                   type="text"
                   value={entityName}
-                  onChange={(e) => setEntityName(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  onChange={(e) => { setEntityName(e.target.value); setErrors(prev => ({ ...prev, entityName: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.entityName ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 />
+                {errors.entityName && <p className="text-red-500 text-xs mt-1">{errors.entityName}</p>}
               </div>
 
               <div>
@@ -317,16 +410,17 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Fund Cluster <span className="text-red-500">*</span>
                 </label>
                 <select
+                  id="fundCluster"
                   value={fundCluster}
-                  onChange={(e) => setFundCluster(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  onChange={(e) => { setFundCluster(e.target.value); setErrors(prev => ({ ...prev, fundCluster: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.fundCluster ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 >
                   <option value="">Select Fund Cluster</option>
                   {fundClusters.map((cluster) => (
                     <option key={cluster} value={cluster}>{cluster}</option>
                   ))}
                 </select>
+                {errors.fundCluster && <p className="text-red-500 text-xs mt-1">{errors.fundCluster}</p>}
               </div>
 
               <div>
@@ -334,12 +428,13 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Property Number <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="propertyNumber"
                   type="text"
                   value={propertyNumber}
-                  onChange={(e) => setPropertyNumber(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50 font-mono"
+                  onChange={(e) => { setPropertyNumber(e.target.value); setErrors(prev => ({ ...prev, propertyNumber: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 font-mono ${errors.propertyNumber ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 />
+                {errors.propertyNumber && <p className="text-red-500 text-xs mt-1">{errors.propertyNumber}</p>}
               </div>
 
               <div>
@@ -347,16 +442,17 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Property Type <span className="text-red-500">*</span>
                 </label>
                 <select
+                  id="propertyType"
                   value={propertyType}
-                  onChange={(e) => setPropertyType(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  onChange={(e) => { setPropertyType(e.target.value); setErrors(prev => ({ ...prev, propertyType: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.propertyType ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 >
                   <option value="">Select Type</option>
                   <option value="Property">Property</option>
                   <option value="Plant">Plant</option>
                   <option value="Equipment">Equipment</option>
                 </select>
+                {errors.propertyType && <p className="text-red-500 text-xs mt-1">{errors.propertyType}</p>}
               </div>
 
               <div>
@@ -364,16 +460,17 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Office / Place <span className="text-red-500">*</span>
                 </label>
                 <select
+                  id="office"
                   value={office}
-                  onChange={(e) => setOffice(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  onChange={(e) => { setOffice(e.target.value); setErrors(prev => ({ ...prev, office: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.office ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 >
                   <option value="">Select Office</option>
                   {officesData.map((off) => (
                     <option key={off} value={off}>{off}</option>
                   ))}
                 </select>
+                {errors.office && <p className="text-red-500 text-xs mt-1">{errors.office}</p>}
               </div>
             </div>
           </div>
@@ -392,16 +489,17 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   PPE Class <span className="text-red-500">*</span>
                 </label>
                 <select
+                  id="ppeClass"
                   value={ppeClass}
                   onChange={handlePPEClassChange}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.ppeClass ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 >
                   <option value="">Select PPE Class</option>
                   {ppeOptions.map((cls) => (
                     <option key={cls} value={cls}>{cls}</option>
                   ))}
                 </select>
+                {errors.ppeClass && <p className="text-red-500 text-xs mt-1">{errors.ppeClass}</p>}
               </div>
 
               <div>
@@ -409,12 +507,13 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Property Description <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="description"
                   type="text"
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  onChange={(e) => { setDescription(e.target.value); setErrors(prev => ({ ...prev, description: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.description ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 />
+                {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description}</p>}
               </div>
             </div>
           </div>
@@ -433,12 +532,13 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   Date Acquired <span className="text-red-500">*</span>
                 </label>
                 <input
+                  id="dateAcquired"
                   type="date"
                   value={dateAcquired}
-                  onChange={(e) => setDateAcquired(e.target.value)}
-                  required
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                  onChange={(e) => { setDateAcquired(e.target.value); setErrors(prev => ({ ...prev, dateAcquired: null })); }}
+                  className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.dateAcquired ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                 />
+                {errors.dateAcquired && <p className="text-red-500 text-xs mt-1">{errors.dateAcquired}</p>}
               </div>
 
               <div>
@@ -474,7 +574,6 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   value={quantity}
                   onChange={handleQuantityChange}
                   min="1"
-                  required
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
                 />
               </div>
@@ -486,16 +585,17 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                 <div className="relative">
                   <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-semibold">₱</span>
                   <input
+                    id="unitCost"
                     type="number"
                     value={unitCost}
                     onChange={handleCostChange}
                     step="0.01"
                     min="0"
-                    required
-                    className="w-full pl-8 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                    className={`w-full pl-8 pr-4 py-3 border-2 rounded-xl focus:outline-none transition-colors bg-gray-50 ${errors.unitCost ? 'border-red-500 focus:border-red-500' : 'border-gray-200 focus:border-green-500'}`}
                     placeholder="0.00"
                   />
                 </div>
+                {errors.unitCost && <p className="text-red-500 text-xs mt-1">{errors.unitCost}</p>}
               </div>
             </div>
           </div>
@@ -532,9 +632,9 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                       value={usefulLife}
                       onChange={handleUsefulLifeChange}
                       min="0"
-                  max="100"
-                  className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-semibold focus:border-green-500 focus:outline-none"
-                  placeholder={ppeClass ? "Enter years (0 for no depreciation)" : "Select PPE class"}
+                      max="100"
+                      className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-semibold focus:border-green-500 focus:outline-none"
+                      placeholder={ppeClass ? "Enter years (0 for no depreciation)" : "Select PPE class"}
                     />
                     {usefulLife && (
                       <span className="flex items-center text-green-800 font-semibold bg-green-100 px-3 rounded-xl">
@@ -543,7 +643,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                     )}
                   </div>
                   {!usefulLife && ppeClass && (
-                    <p className="text-xs text-amber-600 mt-1">⚠ No predefined value. Enter manually.</p>
+                    <p className="text-xs text-amber-600 mt-1">No predefined value. Enter manually.</p>
                   )}
                 </div>
                 <div>
