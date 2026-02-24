@@ -7,6 +7,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
   const [entityName, setEntityName] = useState("");
   const [fundCluster, setFundCluster] = useState("");
   const [propertyNumber, setPropertyNumber] = useState("");
+  const [propertyType, setPropertyType] = useState("");
   const [office, setOffice] = useState("");
   const [ppeClass, setPpeClass] = useState("");
   const [description, setDescription] = useState("");
@@ -16,7 +17,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
   const [quantity, setQuantity] = useState(1);
   const [unitCost, setUnitCost] = useState("");
 
-  // Automatic/Read-only Fields
+  // Automatic/Editable Fields - Now editable for manual input
   const [accountCode, setAccountCode] = useState("");
   const [usefulLife, setUsefulLife] = useState("");
   const [rateOfDepreciation, setRateOfDepreciation] = useState("");
@@ -45,6 +46,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
       setEntityName(asset.entityName || "DENR - Provincial Environment and Natural Resources Office (PENRO)");
       setFundCluster(asset.fundCluster || "Regular Agency Fund");
       setPropertyNumber(asset.propertyNumber || "");
+      setPropertyType(asset.propertyType || "");
       setOffice(asset.office || "");
       setPpeClass(asset.ppeClass || "");
       setDescription(asset.description || "");
@@ -107,12 +109,60 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
     return Math.max(0, Math.floor(years));
   };
 
+  // Handle Useful Life manual input change
+  const handleUsefulLifeChange = (e) => {
+    const value = e.target.value;
+    setUsefulLife(value);
+    
+    // Allow 0 (for items like Land that don't depreciate), blank, or positive numbers
+    if (value === "0") {
+      // 0 years - no depreciation (e.g., Land)
+      setRateOfDepreciation("0");
+      recalculateDepreciation(unitCost, quantity, "0", dateAcquired);
+    } else if (value && parseInt(value) > 0) {
+      // Positive number - calculate rate
+      const rate = (100 / parseInt(value)).toFixed(2);
+      setRateOfDepreciation(rate);
+      recalculateDepreciation(unitCost, quantity, value, dateAcquired);
+    } else if (value === "") {
+      // Blank - reset related fields
+      setRateOfDepreciation("");
+      recalculateDepreciation(unitCost, quantity, "", dateAcquired);
+    }
+  };
+
+  // Handle Rate of Depreciation manual input change
+  const handleRateChange = (e) => {
+    const value = e.target.value;
+    setRateOfDepreciation(value);
+    
+    // Only calculate if value is provided and greater than 0
+    if (value && parseFloat(value) > 0 && unitCost) {
+      const years = Math.round(100 / parseFloat(value));
+      setUsefulLife(years.toString());
+      recalculateDepreciation(unitCost, quantity, years.toString(), dateAcquired);
+    } else if (value === "") {
+      // Allow blank/empty rate - reset useful life
+      setUsefulLife("");
+      recalculateDepreciation(unitCost, quantity, "", dateAcquired);
+    }
+  };
+
   // Automatic depreciation calculations
   const recalculateDepreciation = (cost, qty = quantity, life = usefulLife, dateAcq = dateAcquired) => {
     const total = (parseFloat(cost) || 0) * qty;
     setTotalCost(total.toFixed(2));
 
-    if (cost && life && parseInt(life) > 0) {
+    // Handle 0 useful life (no depreciation - e.g., Land)
+    if (cost && life === "0") {
+      // No depreciation - full value retained
+      setResidualValue("0.00");
+      setDepreciableAmount("0.00");
+      setAnnualDepreciation("0.00");
+      setAccumulatedDepreciation("0.00");
+      setNetBookValue(total.toFixed(2));
+    } else if (cost && life && parseInt(life) > 0) {
+      // Normal depreciation calculation
       const yearsUsed = calculateYearsUsed(dateAcq);
       const depreciation = calculateDepreciation(total, parseInt(life), yearsUsed);
       setResidualValue(depreciation.residualValue.toFixed(2));
@@ -121,6 +171,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
       setAccumulatedDepreciation(depreciation.accumulatedDepreciation.toFixed(2));
       setNetBookValue(depreciation.netBookValue.toFixed(2));
     } else {
+      // Blank or invalid - no depreciation calculated
       setResidualValue("0.00");
       setDepreciableAmount("0.00");
       setAnnualDepreciation("0.00");
@@ -145,6 +196,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
     const assetData = {
       entityName,
       fundCluster,
+      propertyType,
       propertyNumber,
       office,
       ppeClass,
@@ -169,14 +221,12 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
     try {
       let response;
       if (asset && asset.id) {
-        // Update existing asset
         response = await fetch(`http://localhost:4000/api/assets/${asset.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(assetData)
         });
       } else {
-        // Create new asset
         response = await fetch("http://localhost:4000/api/assets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -204,6 +254,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
   const resetForm = () => {
     setEntityName("");
     setFundCluster("");
+    setPropertyType("");
     setPropertyNumber("");
     setOffice("");
     setPpeClass("");
@@ -289,6 +340,23 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   required
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50 font-mono"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Property Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={propertyType}
+                  onChange={(e) => setPropertyType(e.target.value)}
+                  required
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none transition-colors bg-gray-50"
+                >
+                  <option value="">Select Type</option>
+                  <option value="Property">Property</option>
+                  <option value="Plant">Plant</option>
+                  <option value="Equipment">Equipment</option>
+                </select>
               </div>
 
               <div>
@@ -433,14 +501,14 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
           </div>
         </div>
 
-        {/* Section 4: Automatic/Computed Values */}
+        {/* Section 4: Automatic/Computed Values - Now Editable */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
           <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-4 flex items-center gap-3">
             <CalculatorIcon className="w-6 h-6 text-white" />
-            <h3 className="text-lg font-bold text-white">Automatic Calculations</h3>
+            <h3 className="text-lg font-bold text-white">Depreciation Settings (Editable)</h3>
           </div>
           <div className="p-6">
-            {/* PPE Classification Details */}
+            {/* PPE Classification Details - All Editable */}
             <div className="mb-6">
               <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">PPE Classification</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -449,37 +517,63 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
                   <input
                     type="text"
                     value={accountCode}
-                    readOnly
-                    className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-mono font-semibold"
-                    placeholder="Auto-filled"
+                    onChange={(e) => setAccountCode(e.target.value)}
+                    className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-mono font-semibold focus:border-green-500 focus:outline-none"
+                    placeholder="Auto-filled or enter manually"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Useful Life</label>
-                  <input
-                    type="text"
-                    value={usefulLife ? `${usefulLife} years` : ""}
-                    readOnly
-                    className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-semibold"
-                    placeholder="Auto-filled"
-                  />
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Useful Life {!usefulLife && ppeClass && <span className="text-amber-600">(Manual needed)</span>}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={usefulLife}
+                      onChange={handleUsefulLifeChange}
+                      min="0"
+                  max="100"
+                  className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-semibold focus:border-green-500 focus:outline-none"
+                  placeholder={ppeClass ? "Enter years (0 for no depreciation)" : "Select PPE class"}
+                    />
+                    {usefulLife && (
+                      <span className="flex items-center text-green-800 font-semibold bg-green-100 px-3 rounded-xl">
+                        yrs
+                      </span>
+                    )}
+                  </div>
+                  {!usefulLife && ppeClass && (
+                    <p className="text-xs text-amber-600 mt-1">⚠ No predefined value. Enter manually.</p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Rate of Depreciation</label>
-                  <input
-                    type="text"
-                    value={rateOfDepreciation ? `${rateOfDepreciation}%` : ""}
-                    readOnly
-                    className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-semibold"
-                    placeholder="Auto-filled"
-                  />
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    Rate of Depreciation <span className="text-amber-600">(Adjust)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      value={rateOfDepreciation}
+                      onChange={handleRateChange}
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-xl text-green-800 font-semibold focus:border-green-500 focus:outline-none"
+                      placeholder="Auto-calculated"
+                    />
+                    {rateOfDepreciation && (
+                      <span className="flex items-center text-green-800 font-semibold bg-green-100 px-3 rounded-xl">
+                        %
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
 
-            {/* Cost Calculations */}
+            {/* Cost Calculations - Read Only */}
             <div>
-              <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Cost & Depreciation</h4>
+              <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Cost & Depreciation (Auto-Calculated)</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Total Cost</label>

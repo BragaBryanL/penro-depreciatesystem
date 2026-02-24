@@ -3,6 +3,7 @@ import Navbar from "./Navbar";
 import AssetForm from "./AssetForm";
 import StatsCards from "./StatsCards";
 import * as XLSX from "xlsx";
+import { downloadCOAFile, generateCOAHTML } from "./coaGenerator";
 import { 
   ClipboardDocumentListIcon, 
   ClipboardDocumentIcon, 
@@ -90,6 +91,22 @@ export default function App() {
       console.error("Error fetching data");
     }
   };
+
+  // Close modal on ESC key press
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        if (showHistoryModal) setShowHistoryModal(false);
+        if (showDepreciationModal) setShowDepreciationModal(false);
+        if (showTransferModal) setShowTransferModal(false);
+        if (showDisposalModal) setShowDisposalModal(false);
+        if (showCOAModal) setShowCOAModal(false);
+        if (showAddForm) { setShowAddForm(false); setEditingAsset(null); }
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showHistoryModal, showDepreciationModal, showTransferModal, showDisposalModal, showCOAModal, showAddForm]);
 
   // Toggle asset selection
   const toggleAssetSelection = async (id) => {
@@ -247,19 +264,15 @@ export default function App() {
     if (!coAsset) return;
     
     try {
-      // Fetch the template file
       const response = await fetch('/Appendix 70 - PPELC.xls');
       const arrayBuffer = await response.arrayBuffer();
       
-      // Parse the template
       const workbook = XLSX.read(arrayBuffer, { type: 'array' });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       
-      // Get depreciation data for this asset
       const depData = depreciationLog.filter(d => d.assetId === coAsset.id).sort((a, b) => a.year - b.year);
       
-      // Fill in header information based on your template structure:
       worksheet['A1'] = { t: 's', v: 'Appendix 70' };
       worksheet['A2'] = { t: 's', v: 'PROPERTY, PLANT AND EQUIPMENT LEDGER CARD' };
       worksheet['A3'] = { t: 's', v: 'Entity Name:' };
@@ -271,7 +284,6 @@ export default function App() {
       worksheet['C7'] = { t: 's', v: coAsset.usefulLife || '' };
       worksheet['D7'] = { t: 's', v: 'Rate of Depreciation:' };
       
-      // Add initial property entry in row 9
       const startRow = 9;
       worksheet[`A${startRow}`] = { t: 's', v: coAsset.dateAcquired || '' };
       worksheet[`B${startRow}`] = { t: 's', v: coAsset.propertyNumber || '' };
@@ -281,7 +293,6 @@ export default function App() {
       worksheet[`F${startRow}`] = { t: 'n', v: 0 };
       worksheet[`I${startRow}`] = { t: 'n', v: parseFloat(coAsset.totalCost) || parseFloat(coAsset.unitCost) || 0 };
       
-      // Add depreciation entries starting from row 10
       let row = startRow + 1;
       depData.forEach((d) => {
         worksheet[`A${row}`] = { t: 's', v: `Depreciation ${d.year}` };
@@ -291,7 +302,6 @@ export default function App() {
         row++;
       });
       
-      // Generate and download
       const excelBuffer = XLSX.write(workbook, { bookType: 'xls', type: 'array' });
       const blob = new Blob([excelBuffer], { type: 'application/vnd.ms-excel' });
       const url = window.URL.createObjectURL(blob);
@@ -326,32 +336,80 @@ export default function App() {
     setShowDownloadOptions(false);
   };
 
-  // Export to Word
-  const exportToWord = () => {
+  const exportToWord = async () => {
     if (!coAsset) return;
-    const data = depreciationLog.filter(d => d.assetId === coAsset.id);
-    let html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-<head><meta charset='utf-8'><title>COA Property Card</title></head><body>
-<h1 style='text-align:center'>COA FORM</h1>
-<table border='0' cellpadding='5' style='width:100%'>
-<tr><td><strong>Property Number:</strong></td><td>${coAsset.propertyNumber || 'N/A'}</td><td><strong>Date Acquired:</strong></td><td>${formatDate(coAsset.dateAcquired)}</td></tr>
-<tr><td><strong>Description:</strong></td><td>${coAsset.description || ''}</td><td><strong>PPE Class:</strong></td><td>${coAsset.ppeClass || ''}</td></tr>
-<tr><td><strong>Office:</strong></td><td>${coAsset.office || 'N/A'}</td><td><strong>Account Code:</strong></td><td>${coAsset.accountCode || 'N/A'}</td></tr>
-<tr><td><strong>Quantity:</strong></td><td>${coAsset.quantity || 1}</td><td><strong>Unit Cost:</strong></td><td>${formatCurrency(coAsset.unitCost)}</td></tr>
-</table>
-<h3>Depreciation Schedule</h3>
-<table border='1' cellpadding='5' style='width:100%;border-collapse:collapse'>
-<tr style='background:#f0f0f0'><th>Year</th><th>Beginning Value</th><th>Depreciation</th><th>Accumulated</th><th>Ending Value</th></tr>`;
-    data.forEach(d => {
-      html += `<tr><td>${d.year}</td><td>${formatCurrency(d.beginningBookValue)}</td><td>${formatCurrency(d.depreciationExpense)}</td><td>${formatCurrency(d.accumulatedDepreciation)}</td><td>${formatCurrency(d.endingBookValue)}</td></tr>`;
-    });
-    html += '</table></body></html>';
-    const blob = new Blob([html], { type: 'application/msword' });
+    const depData = depreciationLog.filter(d => d.assetId === coAsset.id).sort((a, b) => a.year - b.year);
+    const html = generateCOAHTML(coAsset, depData);
+    const blob = new Blob(['\ufeff' + html], { type: 'application/msword' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `COA_Property_Card_${coAsset.propertyNumber || 'export'}.doc`;
+    a.download = `COA_${coAsset.propertyNumber || 'Property_Card'}.doc`;
+    document.body.appendChild(a);
     a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    setShowDownloadOptions(false);
+  };
+
+  const exportToPDF = () => {
+    if (!coAsset || !printRef.current) return;
+    
+    const printContent = printRef.current.innerHTML;
+    const printWindow = window.open('', '_blank');
+    
+    if (!printWindow) {
+      alert("Please allow popups to download the PDF");
+      return;
+    }
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>COA Property Card - ${coAsset.propertyNumber || 'export'}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Times New Roman', Times, serif; font-size: 11pt; padding: 10px; }
+          table { border-collapse: collapse; width: 100%; }
+          td, th { border: 1px solid #000; padding: 2px 4px; font-size: 9pt; }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .font-bold { font-weight: bold; }
+          .border { border: 1px solid #000; }
+          .bg-gray-200 { background-color: #e5e7eb; }
+          .p-1 { padding: 4px; }
+          .p-2 { padding: 8px; }
+          .mb-2 { margin-bottom: 8px; }
+          .grid { display: grid; }
+          .grid-cols-2 { grid-template-columns: 1fr 1fr; }
+          .gap-4 { gap: 16px; }
+          .inline-block { display: inline-block; }
+          .border-b { border-bottom: 1px solid #000; }
+          @page { size: landscape; margin: 0.5in; }
+          @media print {
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          }
+        </style>
+      </head>
+      <body>
+        ${printContent}
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    printWindow.onload = () => {
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    };
+    
     setShowDownloadOptions(false);
   };
 
@@ -681,8 +739,8 @@ export default function App() {
 
       {/* Asset History Modal */}
       {showHistoryModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowHistoryModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <ClockIcon className="w-7 h-7 text-white" />
@@ -724,8 +782,8 @@ export default function App() {
 
       {/* Depreciation Log Modal */}
       {showDepreciationModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowDepreciationModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <DocumentChartBarIcon className="w-7 h-7 text-white" />
@@ -777,8 +835,8 @@ export default function App() {
 
       {/* Transfer Records Modal */}
       {showTransferModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowTransferModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <ArrowsRightLeftIcon className="w-7 h-7 text-white" />
@@ -842,8 +900,8 @@ export default function App() {
 
       {/* Disposal Records Modal */}
       {showDisposalModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowDisposalModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-red-600 to-red-700 px-6 py-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <ArchiveBoxIcon className="w-7 h-7 text-white" />
@@ -916,8 +974,8 @@ export default function App() {
 
       {/* COA Form Modal */}
       {showCOAModal && coAsset && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowCOAModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <DocumentChartBarIcon className="w-7 h-7 text-white" />
@@ -926,9 +984,7 @@ export default function App() {
               <button onClick={() => setShowCOAModal(false)} className="p-2 hover:bg-white/20 rounded-lg"><XMarkIcon className="w-6 h-6 text-white" /></button>
             </div>
             <div className="p-6 overflow-auto max-h-[70vh]">
-              {/* Action Buttons */}
-              <div className="mb-4 flex flex-wrap gap-2 relative">
-                {/* Download Button with Dropdown */}
+              <div className="mb-4 flex flex-wrap gap-2">
                 <div className="relative">
                   <button 
                     onClick={() => setShowDownloadOptions(!showDownloadOptions)}
@@ -938,23 +994,31 @@ export default function App() {
                     Download
                   </button>
                   
-                  {/* Download Options Dropdown */}
                   {showDownloadOptions && (
                     <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 min-w-[150px]">
                       <button 
-                        onClick={downloadWithTemplate}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-700"
+                        onClick={async () => {
+                          const depData = depreciationLog.filter(d => d.assetId === coAsset.id);
+                          await downloadCOAFile(coAsset, depData);
+                          setShowDownloadOptions(false);
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-700 font-semibold"
                       >
-                        Excel (Template)
+                        Excel
                       </button>
                       <button 
-                        onClick={exportToCSV}
-                        className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-700"
+                        onClick={() => {
+                          exportToPDF();
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-700 font-semibold"
                       >
-                        Excel (CSV)
+                        PDF
                       </button>
                       <button 
-                        onClick={exportToWord}
+                        onClick={() => {
+                          exportToWord();
+                          setShowDownloadOptions(false);
+                        }}
                         className="w-full text-left px-4 py-2 hover:bg-gray-100 text-sm text-gray-700"
                       >
                         Word
@@ -963,7 +1027,6 @@ export default function App() {
                   )}
                 </div>
                 
-                {/* Print */}
                 <button 
                   onClick={handlePrint} 
                   className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg ml-auto"
@@ -973,37 +1036,97 @@ export default function App() {
                 </button>
               </div>
               
-              {/* Print Content */}
-              <div ref={printRef} className="border-2 border-gray-200 rounded-lg p-4">
-                <h3 className="font-bold text-lg mb-4 text-center">COA FORM</h3>
-                <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-                  <div><strong>Property Number:</strong> {coAsset.propertyNumber || 'N/A'}</div>
-                  <div><strong>Date Acquired:</strong> {formatDate(coAsset.dateAcquired)}</div>
-                  <div><strong>Description:</strong> {coAsset.description}</div>
-                  <div><strong>PPE Class:</strong> {coAsset.ppeClass}</div>
-                  <div><strong>Office:</strong> {coAsset.office || 'N/A'}</div>
-                  <div><strong>Account Code:</strong> {coAsset.accountCode || 'N/A'}</div>
-                  <div><strong>Quantity:</strong> {coAsset.quantity || 1}</div>
-                  <div><strong>Unit Cost:</strong> {formatCurrency(coAsset.unitCost)}</div>
+              <div ref={printRef} className="border-2 border-gray-800 p-4 text-xs">
+                <div className="flex mb-2">
+                  <div className="w-16"></div>
+                  <div className="text-center flex-1">
+                    <h3 className="font-bold text-sm">PROPERTY, PLANT AND EQUIPMENT LEDGER CARD</h3>
+                    <p className="text-[10px]">(COA Form No. I-A-2)</p>
+                  </div>
+                  <div className="w-16">
+                    <p className="text-[10px] -rotate-90 origin-center mt-8 w-20">Appendix 70</p>
+                  </div>
                 </div>
-                <table className="w-full text-sm border-collapse">
-                  <thead className="bg-gray-100">
+                
+                <div className="grid grid-cols-2 gap-4 mb-2">
+                  <div><span className="font-bold">Entity Name:</span> <span className="border-b border-gray-400 inline-block min-w-[200px]">{coAsset.entityName || 'DENR - Provincial Environment and Natural Resources Office (PENRO)'}</span></div>
+                  <div><span className="font-bold">Fund Cluster:</span> <span className="border-b border-gray-400 inline-block min-w-[100px]">{coAsset.fundCluster || 'Regular Agency Fund'}</span></div>
+                </div>
+                
+                <div className="border border-gray-800 mb-2 p-2">
+                  <div className="mb-1"><span className="font-bold">Property, Plant and Equipment:</span></div>
+                  <div className="ml-4"><span className="font-bold">Property Type:</span> {coAsset.propertyType}</div>
+                  <div className="ml-4"><span className="font-bold">Description:</span> {coAsset.description}</div>
+                </div>
+                
+                <div className="border border-gray-800 mb-2 p-2 grid grid-cols-2 gap-x-4 gap-y-1">
+                  <div className="col-span-2"><span className="font-bold">Object Account Code:</span> {coAsset.accountCode}</div>
+                  <div><span className="font-bold">Estimated Useful Life:</span> {coAsset.usefulLife} years</div>
+                  <div><span className="font-bold">Rate of Depreciation:</span> {coAsset.depreciationRate || coAsset.depreciableAmount}</div>
+                </div>
+                
+                <table className="w-full text-[10px] border-collapse border border-gray-800">
+                  <thead className="bg-gray-200">
                     <tr>
-                      <th className="border border-gray-300 px-2 py-1 text-left">Year</th>
-                      <th className="border border-gray-300 px-2 py-1 text-right">Beginning Value</th>
-                      <th className="border border-gray-300 px-2 py-1 text-right">Depreciation</th>
-                      <th className="border border-gray-300 px-2 py-1 text-right">Accumulated</th>
-                      <th className="border border-gray-300 px-2 py-1 text-right">Ending Value</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Date</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Reference</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" colSpan={3}>Receipt</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Accumulated Depreciation</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Accumulated Impairment Losses</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Issues/ Transfers/ Adjustments</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Adjusted Cost</th>
+                      <th className="border border-gray-800 px-1 py-1 text-center" colSpan={2}>Repair History</th>
+                    </tr>
+                    <tr>
+                      <th className="border border-gray-800 px-1 py-0.5 text-center">Qty.</th>
+                      <th className="border border-gray-800 px-1 py-0.5 text-center">Unit Cost</th>
+                      <th className="border border-gray-800 px-1 py-0.5 text-center">Total Cost</th>
+                      <th className="border border-gray-800 px-1 py-0.5 text-center">Nature of Repair</th>
+                      <th className="border border-gray-800 px-1 py-0.5 text-center">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {depreciationLog.filter(d => d.assetId === coAsset.id).map((d, i) => (
+                    <tr>
+                      <td className="border border-gray-800 px-1 py-1">{coAsset.dateAcquired ? new Date(coAsset.dateAcquired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</td>
+                      <td className="border border-gray-800 px-1 py-1">{coAsset.propertyNumber}</td>
+                      <td className="border border-gray-800 px-1 py-1 text-center">{coAsset.quantity || 1}</td>
+                      <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(coAsset.unitCost)}</td>
+                      <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(coAsset.totalCost || coAsset.unitCost)}</td>
+                      <td className="border border-gray-800 px-1 py-1 text-right">-</td>
+                      <td className="border border-gray-800 px-1 py-1 text-right">-</td>
+                      <td className="border border-gray-800 px-1 py-1 text-right">-</td>
+                      <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(coAsset.totalCost || coAsset.unitCost)}</td>
+                      <td className="border border-gray-800 px-1 py-1"></td>
+                      <td className="border border-gray-800 px-1 py-1"></td>
+                    </tr>
+                    {depreciationLog.filter(d => d.assetId === coAsset.id).sort((a, b) => a.year - b.year).map((d, i) => (
                       <tr key={i}>
-                        <td className="border border-gray-300 px-2 py-1">{d.year}</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">{formatCurrency(d.beginningBookValue)}</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right text-red-600">{formatCurrency(d.depreciationExpense)}</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right">{formatCurrency(d.accumulatedDepreciation)}</td>
-                        <td className="border border-gray-300 px-2 py-1 text-right font-bold">{formatCurrency(d.endingBookValue)}</td>
+                        <td className="border border-gray-800 px-1 py-1">{d.year}</td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(d.accumulatedDepreciation)}</td>
+                        <td className="border border-gray-800 px-1 py-1 text-right">-</td>
+                        <td className="border border-gray-800 px-1 py-1 text-right">-</td>
+                        <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(d.endingBookValue)}</td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                      </tr>
+                    ))}
+                    {Array.from({ length: Math.max(0, 15 - depreciationLog.filter(d => d.assetId === coAsset.id).length) }).map((_, i) => (
+                      <tr key={`empty-${i}`}>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-1 py-1"></td>
                       </tr>
                     ))}
                   </tbody>

@@ -24,6 +24,7 @@ const dbPromise = open({
       entityName TEXT,
       fundCluster TEXT,
       propertyNumber TEXT,
+      propertyType TEXT,
       office TEXT,
       ppeClass TEXT,
       description TEXT,
@@ -61,6 +62,7 @@ const dbPromise = open({
     { name: "entityName", sql: "ALTER TABLE assets ADD COLUMN entityName TEXT" },
     { name: "fundCluster", sql: "ALTER TABLE assets ADD COLUMN fundCluster TEXT" },
     { name: "propertyNumber", sql: "ALTER TABLE assets ADD COLUMN propertyNumber TEXT" },
+    { name: "propertyType", sql: "ALTER TABLE assets ADD COLUMN propertyType TEXT" },
     { name: "office", sql: "ALTER TABLE assets ADD COLUMN office TEXT" },
     { name: "ppeClass", sql: "ALTER TABLE assets ADD COLUMN ppeClass TEXT" },
     { name: "description", sql: "ALTER TABLE assets ADD COLUMN description TEXT" },
@@ -186,7 +188,6 @@ const logAssetHistory = async (assetId, fieldChanged, oldValue, newValue) => {
 
 // API route to save asset
 app.post("/api/assets", async (req, res) => {
-  // Check if request body exists
   if (!req.body) {
     return res.status(400).json({ success: false, message: "No data provided" });
   }
@@ -195,6 +196,7 @@ app.post("/api/assets", async (req, res) => {
     entityName,
     fundCluster,
     propertyNumber,
+    propertyType,
     office,
     ppeClass,
     description,
@@ -218,7 +220,6 @@ app.post("/api/assets", async (req, res) => {
     remarks
   } = req.body;
 
-  // Validate required fields
   if (!propertyNumber || !description || !office) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
@@ -228,14 +229,14 @@ app.post("/api/assets", async (req, res) => {
   
   const result = await db.run(
     `INSERT INTO assets (
-      entityName, fundCluster, propertyNumber, office, ppeClass, description,
+      entityName, fundCluster, propertyNumber, propertyType, office, ppeClass, description,
       accountCode, usefulLife, rateOfDepreciation, dateAcquired, reference, receipt,
       quantity, unitCost, totalCost, residualValue, depreciableAmount, annualDepreciation,
       accumulatedDepreciation, accumulatedImpairmentLosses, issuesTransfersAdjustments,
       adjustedCost, netBookValue, remarks, createdAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      entityName, fundCluster, propertyNumber, office, ppeClass, description,
+      entityName, fundCluster, propertyNumber, propertyType, office, ppeClass, description,
       accountCode, usefulLife, rateOfDepreciation, dateAcquired, reference, receipt,
       quantity || 1, unitCost, totalCost, residualValue, depreciableAmount, annualDepreciation,
       accumulatedDepreciation || 0, accumulatedImpairmentLosses || 0, issuesTransfersAdjustments || 0,
@@ -243,7 +244,6 @@ app.post("/api/assets", async (req, res) => {
     ]
   );
   
-  // Log the creation
   await logAssetHistory(result.lastID, 'Created', null, `Asset created: ${propertyNumber}`);
   
   res.json({ success: true, message: "Asset saved successfully" });
@@ -272,7 +272,6 @@ app.get("/api/assets/:id", async (req, res) => {
 
 // API route to update asset
 app.put("/api/assets/:id", async (req, res) => {
-  // Check if request body exists
   if (!req.body) {
     return res.status(400).json({ success: false, message: "No data provided" });
   }
@@ -281,6 +280,7 @@ app.put("/api/assets/:id", async (req, res) => {
     entityName,
     fundCluster,
     propertyNumber,
+    propertyType,
     office,
     ppeClass,
     description,
@@ -304,7 +304,6 @@ app.put("/api/assets/:id", async (req, res) => {
     remarks
   } = req.body;
 
-  // Validate required fields
   if (!propertyNumber || !description || !office) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
@@ -312,12 +311,11 @@ app.put("/api/assets/:id", async (req, res) => {
   const db = await dbPromise;
   const now = new Date().toISOString();
   
-  // Get old asset data for history
   const oldAsset = await db.get("SELECT * FROM assets WHERE id = ?", [req.params.id]);
   
   await db.run(
     `UPDATE assets SET
-      entityName = ?, fundCluster = ?, propertyNumber = ?, office = ?, ppeClass = ?,
+      entityName = ?, fundCluster = ?, propertyNumber = ?, propertyType = ?, office = ?, ppeClass = ?,
       description = ?, accountCode = ?, usefulLife = ?, rateOfDepreciation = ?,
       dateAcquired = ?, reference = ?, receipt = ?, quantity = ?, unitCost = ?,
       totalCost = ?, residualValue = ?, depreciableAmount = ?, annualDepreciation = ?,
@@ -325,7 +323,7 @@ app.put("/api/assets/:id", async (req, res) => {
       adjustedCost = ?, netBookValue = ?, remarks = ?, updatedAt = ?
     WHERE id = ?`,
     [
-      entityName, fundCluster, propertyNumber, office, ppeClass, description,
+      entityName, fundCluster, propertyNumber, propertyType, office, ppeClass, description,
       accountCode, usefulLife, rateOfDepreciation, dateAcquired, reference, receipt,
       quantity, unitCost, totalCost, residualValue, depreciableAmount, annualDepreciation,
       accumulatedDepreciation, accumulatedImpairmentLosses, issuesTransfersAdjustments,
@@ -333,8 +331,7 @@ app.put("/api/assets/:id", async (req, res) => {
     ]
   );
   
-  // Log changes
-  const fields = ['entityName', 'fundCluster', 'propertyNumber', 'office', 'ppeClass', 'description', 'accountCode', 'usefulLife', 'dateAcquired', 'quantity', 'unitCost', 'totalCost', 'remarks'];
+  const fields = ['entityName', 'fundCluster', 'propertyNumber', 'propertyType', 'office', 'ppeClass', 'description', 'accountCode', 'usefulLife', 'dateAcquired', 'quantity', 'unitCost', 'totalCost', 'remarks'];
   for (const field of fields) {
     if (oldAsset && oldAsset[field] !== req.body[field]) {
       await logAssetHistory(req.params.id, field, oldAsset[field], req.body[field]);
@@ -397,7 +394,6 @@ app.get("/api/stats", async (req, res) => {
 
 // ==================== ASSET HISTORY API ====================
 
-// Get all asset history
 app.get("/api/history", async (req, res) => {
   const db = await dbPromise;
   const history = await db.all(`
@@ -409,7 +405,6 @@ app.get("/api/history", async (req, res) => {
   res.json(history);
 });
 
-// Get history for specific asset
 app.get("/api/history/:assetId", async (req, res) => {
   const db = await dbPromise;
   const history = await db.all(
@@ -421,7 +416,6 @@ app.get("/api/history/:assetId", async (req, res) => {
 
 // ==================== TRANSFER RECORDS API ====================
 
-// Get all transfers
 app.get("/api/transfers", async (req, res) => {
   const db = await dbPromise;
   const transfers = await db.all(`
@@ -433,7 +427,6 @@ app.get("/api/transfers", async (req, res) => {
   res.json(transfers);
 });
 
-// Create transfer record
 app.post("/api/transfers", async (req, res) => {
   const { assetId, fromOffice, toOffice, transferDate, transferReason, transferredBy, receivedBy } = req.body;
   const db = await dbPromise;
@@ -445,10 +438,8 @@ app.post("/api/transfers", async (req, res) => {
     [assetId, fromOffice, toOffice, transferDate, transferReason, transferredBy, receivedBy, now]
   );
   
-  // Update asset's office
   await db.run("UPDATE assets SET office = ?, updatedAt = ? WHERE id = ?", [toOffice, now, assetId]);
   
-  // Log the transfer in history
   await logAssetHistory(assetId, 'Transfer', fromOffice, toOffice);
   
   res.json({ success: true, message: "Transfer record created successfully" });
@@ -456,7 +447,6 @@ app.post("/api/transfers", async (req, res) => {
 
 // ==================== DISPOSAL RECORDS API ====================
 
-// Get all disposals
 app.get("/api/disposals", async (req, res) => {
   const db = await dbPromise;
   const disposals = await db.all(`
@@ -468,7 +458,6 @@ app.get("/api/disposals", async (req, res) => {
   res.json(disposals);
 });
 
-// Create disposal record
 app.post("/api/disposals", async (req, res) => {
   const { assetId, disposalDate, disposalMethod, disposalReason, proceeds, bookValueAtDisposal, approvedBy } = req.body;
   const db = await dbPromise;
@@ -480,10 +469,8 @@ app.post("/api/disposals", async (req, res) => {
     [assetId, disposalDate, disposalMethod, disposalReason, proceeds || 0, bookValueAtDisposal, approvedBy, now]
   );
   
-  // Update asset status to disposed
   await db.run("UPDATE assets SET status = 'disposed', updatedAt = ? WHERE id = ?", [now, assetId]);
   
-  // Log the disposal in history
   await logAssetHistory(assetId, 'Disposed', 'active', `Disposed via ${disposalMethod}`);
   
   res.json({ success: true, message: "Disposal record created successfully" });
@@ -491,7 +478,6 @@ app.post("/api/disposals", async (req, res) => {
 
 // ==================== DEPRECIATION LOG API ====================
 
-// Get depreciation log for all assets
 app.get("/api/depreciation-log", async (req, res) => {
   const db = await dbPromise;
   const log = await db.all(`
@@ -503,7 +489,6 @@ app.get("/api/depreciation-log", async (req, res) => {
   res.json(log);
 });
 
-// Get depreciation log for specific asset
 app.get("/api/depreciation-log/:assetId", async (req, res) => {
   const db = await dbPromise;
   const log = await db.all(
@@ -513,7 +498,6 @@ app.get("/api/depreciation-log/:assetId", async (req, res) => {
   res.json(log);
 });
 
-// Generate depreciation log for an asset
 app.post("/api/depreciation-log/generate", async (req, res) => {
   const { assetId } = req.body;
   const db = await dbPromise;
@@ -529,11 +513,9 @@ app.post("/api/depreciation-log/generate", async (req, res) => {
   const residualValue = asset.residualValue || 0;
   const totalCost = asset.totalCost || 0;
   
-  // Calculate correct annual depreciation: (Total Cost - Residual) / Useful Life
   const depreciableAmount = totalCost - residualValue;
   const annualDepreciation = depreciableAmount / usefulLife;
   
-  // Determine the last year for depreciation (based on useful life, not current year)
   const lastDepreciationYear = acquisitionYear + usefulLife - 1;
   const yearsToDepreciate = Math.min(currentYear, lastDepreciationYear);
   
@@ -546,7 +528,6 @@ app.post("/api/depreciation-log/generate", async (req, res) => {
     accumulated += depreciation;
     bookValue = Math.max(residualValue, bookValue - depreciation);
     
-    // Check if record exists
     const existing = await db.get("SELECT id FROM depreciation_log WHERE assetId = ? AND year = ?", [assetId, year]);
     
     if (existing) {
@@ -562,7 +543,6 @@ app.post("/api/depreciation-log/generate", async (req, res) => {
     }
   }
   
-  // Update the asset's accumulated depreciation and net book value
   const finalNetBookValue = Math.max(residualValue, totalCost - accumulated);
   await db.run(
     "UPDATE assets SET accumulatedDepreciation = ?, netBookValue = ?, annualDepreciation = ? WHERE id = ?",
@@ -572,7 +552,6 @@ app.post("/api/depreciation-log/generate", async (req, res) => {
   res.json({ success: true, message: "Depreciation log generated successfully" });
 });
 
-// Generate depreciation log for all assets
 app.post("/api/depreciation-log/generate-all", async (req, res) => {
   const db = await dbPromise;
   const assets = await db.all("SELECT * FROM assets WHERE status = 'active'");
@@ -584,11 +563,9 @@ app.post("/api/depreciation-log/generate-all", async (req, res) => {
     const residualValue = asset.residualValue || 0;
     const totalCost = asset.totalCost || 0;
     
-    // Calculate correct annual depreciation: (Total Cost - Residual) / Useful Life
     const depreciableAmount = totalCost - residualValue;
     const annualDepreciation = depreciableAmount / usefulLife;
     
-    // Determine the last year for depreciation (based on useful life, not current year)
     const lastDepreciationYear = acquisitionYear + usefulLife - 1;
     const yearsToDepreciate = Math.min(currentYear, lastDepreciationYear);
     
@@ -616,7 +593,6 @@ app.post("/api/depreciation-log/generate-all", async (req, res) => {
       }
     }
     
-    // Update the asset's accumulated depreciation and net book value in the assets table
     const finalNetBookValue = Math.max(residualValue, totalCost - accumulated);
     await db.run(
       "UPDATE assets SET accumulatedDepreciation = ?, netBookValue = ?, annualDepreciation = ? WHERE id = ?",
@@ -629,7 +605,6 @@ app.post("/api/depreciation-log/generate-all", async (req, res) => {
 
 // ==================== REPAIR HISTORY API ====================
 
-// Get all repairs
 app.get("/api/repairs", async (req, res) => {
   const db = await dbPromise;
   const repairs = await db.all(`
@@ -641,7 +616,6 @@ app.get("/api/repairs", async (req, res) => {
   res.json(repairs);
 });
 
-// Add repair record
 app.post("/api/repairs", async (req, res) => {
   const { assetId, repairDate, natureOfRepair, amount } = req.body;
   const db = await dbPromise;
@@ -652,13 +626,11 @@ app.post("/api/repairs", async (req, res) => {
     [assetId, repairDate, natureOfRepair, amount, now]
   );
   
-  // Log the repair
   await logAssetHistory(assetId, 'Repair', null, `${natureOfRepair} - ₱${amount}`);
   
   res.json({ success: true, message: "Repair record added successfully" });
 });
 
-// Get repair history for an asset
 app.get("/api/repairs/:assetId", async (req, res) => {
   const db = await dbPromise;
   const repairs = await db.all(
