@@ -67,8 +67,8 @@ export function NotificationContainer({ notifications, setNotifications, confirm
 
   return (
     <>
-      {/* Toast Notifications */}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-3 max-w-sm">
+      {/* Toast Notifications - z-60 to appear above navbar (z-50) */}
+      <div className="fixed top-4 right-4 z-[60] flex flex-col gap-3 max-w-sm">
         {notifications.map((notification) => {
           const style = notificationStyles[notification.type] || notificationStyles.info;
           return (
@@ -99,9 +99,9 @@ export function NotificationContainer({ notifications, setNotifications, confirm
         })}
       </div>
 
-      {/* Custom Confirmation Dialog */}
+      {/* Custom Confirmation Dialog - z-60 to appear above navbar */}
       {confirmDialog.show && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl p-6 w-full max-w-md mx-4 animate-scale-in">
             <div className="flex items-center gap-4 mb-4">
               <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">

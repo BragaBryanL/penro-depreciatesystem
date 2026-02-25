@@ -182,6 +182,40 @@ export default function App() {
     );
   };
 
+  // Delete all selected assets
+  const deleteSelectedAssets = async () => {
+    if (selectedAssets.length === 0) {
+      showNotification("No assets selected to delete.", "warning");
+      return;
+    }
+    
+    showConfirmDialog(
+      `Are you sure you want to delete ${selectedAssets.length} asset(s)? This action cannot be undone.`,
+      async () => {
+        let successCount = 0;
+        for (const id of selectedAssets) {
+          try {
+            const response = await fetch(`http://localhost:4000/api/assets/${id}`, { method: "DELETE" });
+            if (response.ok) successCount++;
+          } catch {
+            console.error("Error deleting asset:", id);
+          }
+        }
+        
+        setSelectedAssets([]);
+        fetchAssets();
+        fetchAllData();
+        
+        if (successCount > 0) {
+          showNotification(`Successfully deleted ${successCount} asset(s).`, "success");
+        } else {
+          showNotification("Failed to delete assets. Please try again.", "error");
+        }
+      },
+      () => {}
+    );
+  };
+
   // Create transfer
   const handleCreateTransfer = async (e) => {
     e.preventDefault();
@@ -425,6 +459,269 @@ export default function App() {
     setShowDownloadOptions(false);
   };
 
+  // Import file handler
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const fileName = file.name.toLowerCase();
+    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+    const isCSV = fileName.endsWith('.csv');
+    const isPDF = fileName.endsWith('.pdf');
+    
+    if (isPDF) {
+      showNotification("PDF import is not directly supported. Please convert your PDF to Excel (.xlsx, .xls) or CSV format for import.", "warning");
+      return;
+    }
+    
+    if (!isExcel && !isCSV) {
+      showNotification("Please upload Excel (.xlsx, .xls), CSV, or convert PDF to Excel first.", "error");
+      return;
+    }
+
+    try {
+      let importedAssets = [];
+
+      if (isExcel) {
+        const arrayBuffer = await file.arrayBuffer();
+        const workbook = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+        
+        importedAssets = jsonData.map((row, index) => {
+          const getVal = (keys) => {
+            for (const key of keys) {
+              if (row[key] !== undefined && row[key] !== null && row[key] !== "") return row[key];
+            }
+            return null;
+          };
+          
+          // Handle date - can be a year like "2012" or full date
+          let dateAcquired = getVal(['Date Acquired', 'dateAcquired', 'DateAcquired', 'Date', 'Year']);
+          if (dateAcquired) {
+            if (dateAcquired instanceof Date) {
+              dateAcquired = dateAcquired.toISOString().split('T')[0];
+            } else if (typeof dateAcquired === 'number') {
+              // Excel serial date number
+              const excelDate = new Date((dateAcquired - 25569) * 86400 * 1000);
+              dateAcquired = excelDate.toISOString().split('T')[0];
+            } else if (typeof dateAcquired === 'string') {
+              // Check if it's just a year like "2012" or "2014"
+              if (/^\d{4}$/.test(dateAcquired.trim())) {
+                // It's just a year, convert to January 1st of that year
+                dateAcquired = `${dateAcquired.trim()}-01-01`;
+              }
+            }
+          }
+
+          const getNum = (keys) => {
+            for (const key of keys) {
+              const val = row[key];
+              if (val !== undefined && val !== null && val !== "") {
+                // Handle string numbers with commas like "75,000.00"
+                const strVal = String(val).replace(/,/g, '').trim();
+                const num = parseFloat(strVal);
+                if (!isNaN(num)) return num;
+              }
+            }
+            return null;
+          };
+
+          const getStr = (keys) => {
+            for (const key of keys) {
+              const val = row[key];
+              if (val !== undefined && val !== null && String(val).trim() !== "") return String(val).trim();
+            }
+            return "";
+          };
+
+          // Map columns from user's Excel format
+          const propertyNo = getStr(['Property No.', 'Property No', 'Property Number', 'propertyNumber', 'Property #', 'propertyNo']);
+          const description = getStr(['Property Description', 'Description', 'description', 'Item Description', 'PropertyDesc']);
+          const ppeClass = getStr(['PPE Class', 'ppeClass', 'Class', 'Property Type', 'propertyType']);
+          const accountCode = getStr(['Account Code', 'accountCode', 'Acct Code', 'AccountCode']);
+          const quantity = getNum(['Quantity', 'quantity', 'Qty', 'QTY']) || 1;
+          
+          // Cost fields - handle both "Unit Cost" and "Cost" columns
+          const unitCost = getNum(['Unit Cost', 'unitCost', 'UnitCost', 'Cost', 'cost', 'UnitPrice']) || 0;
+          const residualValue = getNum(['Residual Value', 'residualValue', 'ResidualValue', 'Salvage Value', 'salvageValue']) || 0;
+          const usefulLife = getNum(['Useful Life (Years)', 'Useful Life', 'usefulLife', 'Life', 'UsefulLife', 'Years']) || 5;
+          const depreciableAmount = getNum(['Depreciable Amount', 'depreciableAmount', 'DepreciableAmount']) || 0;
+          const accumulatedDepreciation = getNum(['Accumulated Depreciation', 'accumulatedDepreciation', 'AccumulatedDepreciation', 'Accum Depr']) || 0;
+          const netBookValue = getNum(['Net Book Value', 'netBookValue', 'NetBookValue', 'Book Value']) || 0;
+          const annualDepreciation = getNum(['Annual Depreciation', 'annualDepreciation', 'AnnualDepreciation']) || 0;
+          const remarks = getStr(['REM ARKS', 'Remarks', 'remarks', 'REMARKS', 'Notes', 'notes']) || "";
+
+          // Calculate derived values if not provided
+          const calcResidualValue = residualValue > 0 ? residualValue : unitCost * 0.05;
+          const calcDepreciableAmount = depreciableAmount > 0 ? depreciableAmount : (unitCost - calcResidualValue);
+          const calcAnnualDepreciation = annualDepreciation > 0 ? annualDepreciation : (usefulLife > 0 ? calcDepreciableAmount / usefulLife : 0);
+          const calcNetBookValue = netBookValue > 0 ? netBookValue : (unitCost - calcResidualValue);
+
+          return {
+            entityName: getStr(['Entity Name', 'entityName', 'Entity']) || "DENR - PENRO",
+            fundCluster: getStr(['Fund Cluster', 'fundCluster', 'Fund']) || "Regular Agency Fund",
+            propertyNumber: propertyNo || `IMP-${Date.now()}-${index + 1}`,
+            propertyType: ppeClass ? "Property" : "Property",
+            office: getStr(['Office', 'office', 'Location']) || "Main Office",
+            ppeClass: ppeClass || "",
+            description: description || "",
+            accountCode: accountCode || "",
+            usefulLife: usefulLife,
+            dateAcquired: dateAcquired || new Date().toISOString().split('T')[0],
+            reference: getStr(['Reference', 'reference', 'Ref']) || "",
+            receipt: getStr(['Receipt', 'receipt']) || "",
+            quantity: quantity,
+            unitCost: unitCost,
+            residualValue: calcResidualValue,
+            depreciableAmount: calcDepreciableAmount,
+            annualDepreciation: calcAnnualDepreciation,
+            accumulatedDepreciation: accumulatedDepreciation,
+            netBookValue: calcNetBookValue,
+            remarks: remarks
+          };
+        });
+      } else if (isCSV) {
+        const text = await file.text();
+        const lines = text.split('\n').filter(line => line.trim());
+        if (lines.length < 2) {
+          showNotification("CSV file is empty.", "warning");
+          return;
+        }
+        const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+        
+        for (let i = 1; i < lines.length; i++) {
+          const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''));
+          const row = {};
+          headers.forEach((header, idx) => { row[header] = values[idx] || ""; });
+          
+          const getVal = (keys) => {
+            for (const key of keys) {
+              const idx = headers.findIndex(h => h.toLowerCase() === key.toLowerCase());
+              if (idx >= 0 && values[idx]) return values[idx];
+            }
+            return null;
+          };
+          
+          importedAssets.push({
+            entityName: getVal(['Entity Name', 'entityName']) || "DENR - PENRO",
+            fundCluster: getVal(['Fund Cluster', 'fundCluster']) || "Regular Agency Fund",
+            propertyNumber: getVal(['Property Number', 'propertyNumber']) || `IMP-${Date.now()}-${i}`,
+            propertyType: getVal(['Property Type', 'propertyType']) || "Property",
+            office: getVal(['Office', 'office']) || "",
+            ppeClass: getVal(['PPE Class', 'ppeClass']) || "",
+            description: getVal(['Description', 'description']) || "",
+            accountCode: getVal(['Account Code', 'accountCode']) || "",
+            usefulLife: parseInt(getVal(['Useful Life', 'usefulLife'])) || 5,
+            dateAcquired: getVal(['Date Acquired', 'dateAcquired']) || new Date().toISOString().split('T')[0],
+            reference: getVal(['Reference', 'reference']) || "",
+            receipt: getVal(['Receipt', 'receipt']) || "",
+            quantity: parseInt(getVal(['Quantity', 'quantity'])) || 1,
+            unitCost: parseFloat(getVal(['Unit Cost', 'unitCost'])) || 0,
+            remarks: getVal(['Remarks', 'remarks']) || ""
+          });
+        }
+      }
+
+      // Don't filter out rows - try to import all with defaults for missing data
+      const validAssets = importedAssets.filter(a => {
+        // Only skip completely empty rows
+        return Object.values(a).some(v => v && String(v).trim() !== "");
+      });
+
+      if (validAssets.length === 0) {
+        showNotification("No valid data found. The Excel file appears to be empty.", "warning");
+        return;
+      }
+
+      let successCount = 0;
+      let errorMessages = [];
+      
+      for (let i = 0; i < validAssets.length; i++) {
+        const asset = validAssets[i];
+        
+        // Generate property number if not provided
+        const finalPropertyNumber = (asset.propertyNumber && asset.propertyNumber.trim()) 
+          ? asset.propertyNumber.trim() 
+          : `IMP-${Date.now()}-${i + 1}`;
+        
+        // Use description or generate a placeholder
+        const finalDescription = (asset.description && asset.description.trim()) 
+          ? asset.description.trim() 
+          : `Imported Asset ${i + 1}`;
+        
+        const totalCost = (parseFloat(asset.unitCost) || 0) * (parseInt(asset.quantity) || 1);
+        const residualValue = totalCost * 0.05;
+        const depreciableAmount = totalCost - residualValue;
+        const annualDepreciation = (asset.usefulLife > 0) ? depreciableAmount / asset.usefulLife : 0;
+        
+        const assetData = {
+          entityName: asset.entityName || "DENR - PENRO",
+          fundCluster: asset.fundCluster || "Regular Agency Fund",
+          propertyNumber: finalPropertyNumber,
+          propertyType: asset.propertyType || "Property",
+          office: asset.office || "Main Office",
+          ppeClass: asset.ppeClass || "",
+          description: finalDescription,
+          accountCode: asset.accountCode || "",
+          usefulLife: parseInt(asset.usefulLife) || 5,
+          dateAcquired: asset.dateAcquired || new Date().toISOString().split('T')[0],
+          reference: asset.reference || "",
+          receipt: asset.receipt || "",
+          quantity: parseInt(asset.quantity) || 1,
+          unitCost: parseFloat(asset.unitCost) || 0,
+          totalCost: totalCost,
+          residualValue: residualValue,
+          depreciableAmount: depreciableAmount,
+          annualDepreciation: annualDepreciation,
+          accumulatedDepreciation: 0,
+          netBookValue: totalCost - residualValue,
+          remarks: asset.remarks || ""
+        };
+
+        try {
+          const response = await fetch("http://localhost:4000/api/assets", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(assetData)
+          });
+          
+          if (response.ok) {
+            successCount++;
+          } else {
+            const errorData = await response.json();
+            errorMessages.push(`${finalPropertyNumber}: ${errorData.message || 'Unknown error'}`);
+          }
+        } catch (err) {
+          console.error("Network error:", err);
+          errorMessages.push(`${finalPropertyNumber}: Network error - check server`);
+        }
+      }
+
+      if (successCount > 0) {
+        showNotification(`Successfully imported ${successCount} asset(s)!`, "success");
+        fetchAssets();
+        fetchAllData();
+      } 
+      
+      if (errorMessages.length > 0) {
+        const errorText = errorMessages.slice(0, 3).join(', ');
+        const moreText = errorMessages.length > 3 ? ` and ${errorMessages.length - 3} more` : '';
+        showNotification(`Import issues: ${errorText}${moreText}`, "warning");
+      }
+      
+      if (successCount === 0 && errorMessages.length === 0) {
+        showNotification("Failed to import. Check Excel file format and server.", "error");
+      }
+    } catch (err) {
+      console.error("Error:", err);
+      showNotification("Error: " + err.message, "error");
+    }
+
+    e.target.value = '';
+  };
+
   // Filter assets
   const filteredAssets = assets.filter(asset => 
     asset.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -466,13 +763,25 @@ export default function App() {
               <h1 className="text-4xl font-bold text-green-800">DENR-PENRO</h1>
               <p className="text-gray-600">Property, Plant & Equipment Depreciation System</p>
             </div>
-            <button 
-              onClick={() => setShowAddForm(true)}
-              className="mt-4 md:mt-0 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-xl shadow-lg flex items-center gap-2 transition-all hover:scale-105"
-            >
-              <PlusIcon className="w-6 h-6" />
-              Add New Property
-            </button>
+            <div className="flex gap-3 mt-4 md:mt-0">
+              <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg flex items-center gap-2 transition-all hover:scale-105">
+                <ArrowUpTrayIcon className="w-5 h-5" />
+                Import File
+                <input 
+                  type="file" 
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleImportFile}
+                  className="hidden" 
+                />
+              </label>
+              <button 
+                onClick={() => setShowAddForm(true)}
+                className="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-8 rounded-xl shadow-lg flex items-center gap-2 transition-all hover:scale-105"
+              >
+                <PlusIcon className="w-6 h-6" />
+                Add New Property
+              </button>
+            </div>
           </div>
           
           <StatsCards assets={assets} loading={loading} />
@@ -498,9 +807,18 @@ export default function App() {
               </div>
               <div className="flex gap-2 items-center">
                 {selectedAssets.length > 0 && (
-                  <span className="bg-white/20 text-white px-3 py-1 rounded-full text-sm">
-                    {selectedAssets.length} selected for COA
-                  </span>
+                  <>
+                    <span className="bg-white/20 text-white px-3 py-1 rounded-full text-sm">
+                      {selectedAssets.length} selected
+                    </span>
+                    <button 
+                      onClick={deleteSelectedAssets}
+                      className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-full text-sm flex items-center gap-1"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                      Delete Selected
+                    </button>
+                  </>
                 )}
                 <button onClick={selectAllAssets} className="bg-white/20 hover:bg-white/30 text-white px-3 py-1 rounded-full text-sm">
                   {selectedAssets.length === filteredAssets.length && filteredAssets.length > 0 ? "Deselect All" : "Select All"}

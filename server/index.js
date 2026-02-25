@@ -186,7 +186,7 @@ const logAssetHistory = async (assetId, fieldChanged, oldValue, newValue) => {
   );
 };
 
-// API route to save asset
+// API route to save asset - FIXED: Allow import with minimal fields
 app.post("/api/assets", async (req, res) => {
   if (!req.body) {
     return res.status(400).json({ success: false, message: "No data provided" });
@@ -220,12 +220,16 @@ app.post("/api/assets", async (req, res) => {
     remarks
   } = req.body;
 
-  if (!propertyNumber || !description || !office) {
-    return res.status(400).json({ success: false, message: "Missing required fields" });
+  // FIXED: Only require propertyNumber and description, use defaults for office
+  if (!propertyNumber || !description) {
+    return res.status(400).json({ success: false, message: "Missing required fields: propertyNumber and description are required" });
   }
 
   const db = await dbPromise;
   const now = new Date().toISOString();
+  
+  // Use default values for optional fields
+  const finalOffice = office || "Main Office";
   
   const result = await db.run(
     `INSERT INTO assets (
@@ -236,7 +240,7 @@ app.post("/api/assets", async (req, res) => {
       adjustedCost, netBookValue, remarks, createdAt, updatedAt
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
-      entityName, fundCluster, propertyNumber, propertyType, office, ppeClass, description,
+      entityName, fundCluster, propertyNumber, propertyType, finalOffice, ppeClass, description,
       accountCode, usefulLife, rateOfDepreciation, dateAcquired, reference, receipt,
       quantity || 1, unitCost, totalCost, residualValue, depreciableAmount, annualDepreciation,
       accumulatedDepreciation || 0, accumulatedImpairmentLosses || 0, issuesTransfersAdjustments || 0,
@@ -304,7 +308,8 @@ app.put("/api/assets/:id", async (req, res) => {
     remarks
   } = req.body;
 
-  if (!propertyNumber || !description || !office) {
+  // FIXED: Allow update with minimal fields
+  if (!propertyNumber || !description) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
