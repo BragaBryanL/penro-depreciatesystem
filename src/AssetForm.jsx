@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ppeClassesData, officesData, fundClusters, calculateDepreciation } from "./data/ppeClasses";
-import { showNotification } from "./components/Notification";
+import { showNotification } from "./utils/notificationHelpers";
 import { CalculatorIcon, CalendarIcon, DocumentTextIcon, BuildingOfficeIcon, ClipboardDocumentListIcon } from "@heroicons/react/24/outline";
 
 export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
@@ -173,7 +173,7 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
   };
 
   // Automatic depreciation calculations
-  const recalculateDepreciation = (cost, qty = quantity, life = usefulLife, dateAcq = dateAcquired) => {
+  const recalculateDepreciation = useCallback((cost, qty = quantity, life = usefulLife, dateAcq = dateAcquired) => {
     const total = (parseFloat(cost) || 0) * qty;
     setTotalCost(total.toFixed(2));
 
@@ -202,14 +202,14 @@ export default function AssetForm({ asset = null, onAssetSaved, onCancel }) {
       setAccumulatedDepreciation("0.00");
       setNetBookValue(total.toFixed(2));
     }
-  };
+  }, [quantity, usefulLife, dateAcquired]);
 
   // Update calculations when useful life or date acquired changes
   useEffect(() => {
     if (unitCost && usefulLife) {
       recalculateDepreciation(unitCost, quantity, usefulLife, dateAcquired);
     }
-  }, [usefulLife, dateAcquired]);
+  }, [usefulLife, dateAcquired, quantity, recalculateDepreciation, unitCost]);
 
   // Handle form submission
   const handleSubmit = async (e) => {

@@ -94,7 +94,7 @@ const dbPromise = open({
     if (!existingColumns.includes(col.name)) {
       try {
         await db.exec(col.sql);
-      } catch (e) {
+      } catch {
         // Column may already exist, ignore error
       }
     }
