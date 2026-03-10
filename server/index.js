@@ -514,9 +514,20 @@ app.post("/api/depreciation-log/generate", async (req, res) => {
   
   const acquisitionYear = new Date(asset.dateAcquired).getFullYear();
   const currentYear = new Date().getFullYear();
-  const usefulLife = asset.usefulLife || 5;
+  const usefulLife = asset.usefulLife; // Don't default to 5 if null
   const residualValue = asset.residualValue || 0;
   const totalCost = asset.totalCost || 0;
+  
+  // If no useful life, asset should not be depreciated (like land)
+  if (!usefulLife) {
+    return [{
+      year: acquisitionYear,
+      beginningBookValue: totalCost,
+      depreciationExpense: 0,
+      accumulatedDepreciation: 0,
+      endingBookValue: totalCost
+    }];
+  }
   
   const depreciableAmount = totalCost - residualValue;
   const annualDepreciation = depreciableAmount / usefulLife;
@@ -564,9 +575,14 @@ app.post("/api/depreciation-log/generate-all", async (req, res) => {
   for (const asset of assets) {
     const acquisitionYear = new Date(asset.dateAcquired).getFullYear();
     const currentYear = new Date().getFullYear();
-    const usefulLife = asset.usefulLife || 5;
+    const usefulLife = asset.usefulLife; // Don't default to 5 if null
     const residualValue = asset.residualValue || 0;
     const totalCost = asset.totalCost || 0;
+    
+    // If no useful life, asset should not be depreciated (like land)
+    if (!usefulLife) {
+      continue; // Skip depreciation for non-depreciable assets
+    }
     
     const depreciableAmount = totalCost - residualValue;
     const annualDepreciation = depreciableAmount / usefulLife;
@@ -643,6 +659,41 @@ app.get("/api/repairs/:assetId", async (req, res) => {
     [req.params.assetId]
   );
   res.json(repairs);
+});
+
+// Fix Construction in Progress assets useful life
+app.post("/api/assets/fix-construction-useful-life", async (req, res) => {
+  const db = await dbPromise;
+  
+  try {
+    // Update all Construction in Progress assets to have null useful life
+    await db.run(
+      `UPDATE assets SET usefulLife = NULL WHERE ppeClass LIKE '%Construction in Progress%'`
+    );
+    
+    // Update all Land assets to have null useful life
+    await db.run(
+      `UPDATE assets SET usefulLife = NULL WHERE ppeClass = 'Land' OR accountCode = '10601010'`
+    );
+    
+    // Clear existing depreciation log for these assets
+    await db.run(
+      `DELETE FROM depreciation_log WHERE assetId IN (
+        SELECT id FROM assets WHERE ppeClass LIKE '%Construction in Progress%' OR ppeClass = 'Land' OR accountCode = '10601010'
+      )`
+    );
+    
+    res.json({ 
+      success: true, 
+      message: "Fixed Construction in Progress and Land assets useful life and cleared depreciation log" 
+    });
+  } catch (error) {
+    console.error('Error fixing assets:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to fix assets" 
+    });
+  }
 });
 
 // Server listening

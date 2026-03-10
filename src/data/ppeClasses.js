@@ -69,13 +69,13 @@ export const ppeClassesData = {
   },
   "Construction in Progress - Land Improvements": {
     accountCode: "10699010",
-    usefulLife: 20, // Default 20 years for land improvements
-    rateOfDepreciation: 5.00 // 100% / 20 years
+    usefulLife: null, // No depreciation until completion
+    rateOfDepreciation: null
   },
   "Construction in Progress - Buildings and Other Structures": {
     accountCode: "10699030",
-    usefulLife: 30, // Default 30 years for buildings
-    rateOfDepreciation: 3.33 // 100% / 30 years
+    usefulLife: null, // No depreciation until completion
+    rateOfDepreciation: null
   },
   "Disaster Response and Rescue Equipment": {
     accountCode: "10605090",

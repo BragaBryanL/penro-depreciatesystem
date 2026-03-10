@@ -54,6 +54,22 @@ export default function App() {
   const [disposals, setDisposals] = useState([]);
   const [coAsset, setCoAsset] = useState(null);
   
+  // Pagination for Asset History modal
+  const [historyModalPage, setHistoryModalPage] = useState(1);
+  const [historyModalPageSize] = useState(10);
+
+  // Pagination for Depreciation Log modal
+  const [depreciationModalPage, setDepreciationModalPage] = useState(1);
+  const [depreciationModalPageSize] = useState(10);
+
+  // Pagination for Transfer Records modal
+  const [transferModalPage, setTransferModalPage] = useState(1);
+  const [transferModalPageSize] = useState(10);
+
+  // Pagination for Disposal Records modal
+  const [disposalModalPage, setDisposalModalPage] = useState(1);
+  const [disposalModalPageSize] = useState(10);
+  
   // Form states
   const [transferForm, setTransferForm] = useState({ assetId: '', fromOffice: '', toOffice: '', transferDate: '', transferReason: '', transferredBy: '', receivedBy: '' });
   const [disposalForm, setDisposalForm] = useState({ assetId: '', disposalDate: '', disposalMethod: '', disposalReason: '', proceeds: 0, bookValueAtDisposal: 0, approvedBy: '' });
@@ -526,21 +542,31 @@ export default function App() {
           
           // Handle date - can be a year like "2012" or full date
           let dateAcquired = getVal(['Date Acquired', 'dateAcquired', 'DateAcquired', 'Date', 'Year']);
+          console.log('Original dateAcquired:', dateAcquired, 'type:', typeof dateAcquired);
+          
           if (dateAcquired) {
             if (dateAcquired instanceof Date) {
               dateAcquired = dateAcquired.toISOString().split('T')[0];
             } else if (typeof dateAcquired === 'number') {
-              // Excel serial date number
-              const excelDate = new Date((dateAcquired - 25569) * 86400 * 1000);
-              dateAcquired = excelDate.toISOString().split('T')[0];
+              // Excel serial date number - check if it's actually a year
+              if (dateAcquired >= 1900 && dateAcquired <= 2100) {
+                // It's likely a year stored as number, keep it as year
+                dateAcquired = dateAcquired.toString();
+              } else {
+                // It's an Excel serial date number
+                const excelDate = new Date((dateAcquired - 25569) * 86400 * 1000);
+                dateAcquired = excelDate.toISOString().split('T')[0];
+              }
             } else if (typeof dateAcquired === 'string') {
               // Check if it's just a year like "2012" or "2014"
               if (/^\d{4}$/.test(dateAcquired.trim())) {
-                // It's just a year, convert to January 1st of that year
-                dateAcquired = `${dateAcquired.trim()}-01-01`;
+                // It's just a year, keep it as year string
+                dateAcquired = dateAcquired.trim();
               }
             }
           }
+          
+          console.log('Final dateAcquired:', dateAcquired);
 
           const getNum = (keys) => {
             for (const key of keys) {
@@ -573,7 +599,15 @@ export default function App() {
           // Cost fields - handle both "Unit Cost" and "Cost" columns
           const unitCost = getNum(['Unit Cost', 'unitCost', 'UnitCost', 'Cost', 'cost', 'UnitPrice']) || 0;
           const residualValue = getNum(['Residual Value', 'residualValue', 'ResidualValue', 'Salvage Value', 'salvageValue']) || 0;
-          const usefulLife = getNum(['Useful Life (Years)', 'Useful Life', 'usefulLife', 'Life', 'UsefulLife', 'Years']) || 5;
+          const usefulLife = getNum(['Useful Life (Years)', 'Useful Life', 'usefulLife', 'Life', 'UsefulLife', 'Years']);
+          
+          // For Construction in Progress and Land assets, set useful life to null/0
+          if (ppeClass && (ppeClass.includes('Construction in Progress') || ppeClass === 'Land')) {
+            // Don't set a default useful life for Construction in Progress and Land
+          } else if (!usefulLife) {
+            // Only set default to 5 for other assets if no useful life is found
+            usefulLife = 5;
+          }
           const depreciableAmount = getNum(['Depreciable Amount', 'depreciableAmount', 'DepreciableAmount']) || 0;
           const accumulatedDepreciation = getNum(['Accumulated Depreciation', 'accumulatedDepreciation', 'AccumulatedDepreciation', 'Accum Depr']) || 0;
           const netBookValue = getNum(['Net Book Value', 'netBookValue', 'NetBookValue', 'Book Value']) || 0;
@@ -779,7 +813,122 @@ export default function App() {
   // Format date
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
+    
+    // If it's just a year, return as-is
+    if (/^\d{4}$/.test(dateStr.trim())) {
+      return dateStr.trim();
+    }
+    
+    // Otherwise format full date
     return new Date(dateStr).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  // Pagination helpers for Asset History modal
+  const getPaginatedModalHistory = () => {
+    const startIndex = (historyModalPage - 1) * historyModalPageSize;
+    const endIndex = startIndex + historyModalPageSize;
+    return assetHistory.slice(startIndex, endIndex);
+  };
+
+  const getTotalModalHistoryPages = () => {
+    return Math.ceil(assetHistory.length / historyModalPageSize);
+  };
+
+  const loadMoreModalHistory = () => {
+    if (historyModalPage < getTotalModalHistoryPages()) {
+      setHistoryModalPage(prev => prev + 1);
+    }
+  };
+
+  const showLessModalHistory = () => {
+    if (historyModalPage > 1) {
+      setHistoryModalPage(prev => prev - 1);
+    }
+  };
+
+  const resetModalHistoryPage = () => {
+    setHistoryModalPage(1);
+  };
+
+  // Pagination helpers for Depreciation Log modal
+  const getPaginatedModalDepreciation = () => {
+    const startIndex = (depreciationModalPage - 1) * depreciationModalPageSize;
+    const endIndex = startIndex + depreciationModalPageSize;
+    return depreciationLog.slice(startIndex, endIndex);
+  };
+
+  const getTotalModalDepreciationPages = () => {
+    return Math.ceil(depreciationLog.length / depreciationModalPageSize);
+  };
+
+  const loadMoreModalDepreciation = () => {
+    if (depreciationModalPage < getTotalModalDepreciationPages()) {
+      setDepreciationModalPage(prev => prev + 1);
+    }
+  };
+
+  const showLessModalDepreciation = () => {
+    if (depreciationModalPage > 1) {
+      setDepreciationModalPage(prev => prev - 1);
+    }
+  };
+
+  const resetModalDepreciationPage = () => {
+    setDepreciationModalPage(1);
+  };
+
+  // Pagination helpers for Transfer Records modal
+  const getPaginatedModalTransfers = () => {
+    const startIndex = (transferModalPage - 1) * transferModalPageSize;
+    const endIndex = startIndex + transferModalPageSize;
+    return transfers.slice(startIndex, endIndex);
+  };
+
+  const getTotalModalTransferPages = () => {
+    return Math.ceil(transfers.length / transferModalPageSize);
+  };
+
+  const loadMoreModalTransfers = () => {
+    if (transferModalPage < getTotalModalTransferPages()) {
+      setTransferModalPage(prev => prev + 1);
+    }
+  };
+
+  const showLessModalTransfers = () => {
+    if (transferModalPage > 1) {
+      setTransferModalPage(prev => prev - 1);
+    }
+  };
+
+  const resetModalTransferPage = () => {
+    setTransferModalPage(1);
+  };
+
+  // Pagination helpers for Disposal Records modal
+  const getPaginatedModalDisposals = () => {
+    const startIndex = (disposalModalPage - 1) * disposalModalPageSize;
+    const endIndex = startIndex + disposalModalPageSize;
+    return disposals.slice(startIndex, endIndex);
+  };
+
+  const getTotalModalDisposalPages = () => {
+    return Math.ceil(disposals.length / disposalModalPageSize);
+  };
+
+  const loadMoreModalDisposals = () => {
+    if (disposalModalPage < getTotalModalDisposalPages()) {
+      setDisposalModalPage(prev => prev + 1);
+    }
+  };
+
+  const showLessModalDisposals = () => {
+    if (disposalModalPage > 1) {
+      setDisposalModalPage(prev => prev - 1);
+    }
+  };
+
+  const resetModalDisposalPage = () => {
+    setDisposalModalPage(1);
   };
 
   return (
@@ -918,7 +1067,9 @@ export default function App() {
                           <td className="px-1 py-2 text-xs text-gray-700 max-w-[120px] truncate">{asset.description || "-"}</td>
                           <td className="px-1 py-2"><span className="bg-green-100 text-green-700 px-1 py-0.5 rounded text-xs font-medium">{asset.ppeClass || "-"}</span></td>
                           <td className="px-1 py-2 font-mono text-xs text-gray-600">{asset.accountCode || "-"}</td>
-                          <td className="px-1 py-2 text-center text-xs text-gray-700">{asset.usefulLife || "-"}</td>
+                          <td className="px-1 py-2 text-center text-xs text-gray-700">
+                            {(asset.ppeClass && asset.ppeClass.includes('Construction in Progress')) ? '-' : (asset.usefulLife || "-")}
+                          </td>
                           <td className="px-1 py-2 text-center">
                             <span className={`px-1 py-0.5 rounded text-xs font-medium ${asset.status === 'disposed' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                               {asset.status || 'active'}
@@ -930,7 +1081,14 @@ export default function App() {
                           <td className="px-1 py-2 text-right text-xs text-gray-600">{formatCurrency(asset.depreciableAmount)}</td>
                           <td className="px-1 py-2 text-right text-xs text-blue-600">{formatCurrency(asset.annualDepreciation)}</td>
                           <td className="px-1 py-2 text-right text-xs text-orange-600 font-medium">{formatCurrency(asset.accumulatedDepreciation)}</td>
-                          <td className="px-1 py-2 text-right text-xs font-bold text-green-600">{formatCurrency(asset.netBookValue)}</td>
+                          <td className="px-1 py-2 text-right text-xs font-bold text-green-600">
+                            {formatCurrency(
+                              // For Construction in Progress assets, show Total Cost as Net Book Value
+                              (asset.ppeClass && asset.ppeClass.includes('Construction in Progress')) 
+                                ? asset.totalCost 
+                                : asset.netBookValue
+                            )}
+                          </td>
                           <td className="px-1 py-2 text-xs text-gray-600 max-w-[100px] truncate">{asset.remarks || "-"}</td>
                           <td className="px-1 py-2">
                             <div className="flex gap-0.5 justify-center">
@@ -989,7 +1147,7 @@ export default function App() {
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Asset History */}
-              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-blue-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { setShowHistoryModal(true); fetchAllData(); }}>
+              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-blue-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { resetModalHistoryPage(); setShowHistoryModal(true); fetchAllData(); }}>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="p-3 bg-blue-100 rounded-xl"><ClockIcon className="w-8 h-8 text-blue-600" /></div>
                   <div>
@@ -1002,7 +1160,7 @@ export default function App() {
               </div>
 
               {/* Depreciation Log */}
-              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-green-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { setShowDepreciationModal(true); fetchAllData(); }}>
+              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-green-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { resetModalDepreciationPage(); setShowDepreciationModal(true); fetchAllData(); }}>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="p-3 bg-green-100 rounded-xl"><DocumentChartBarIcon className="w-8 h-8 text-green-600" /></div>
                   <div>
@@ -1015,7 +1173,7 @@ export default function App() {
               </div>
 
               {/* Transfer Records */}
-              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-purple-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { setShowTransferModal(true); fetchAllData(); }}>
+              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-purple-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { resetModalTransferPage(); setShowTransferModal(true); fetchAllData(); }}>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="p-3 bg-purple-100 rounded-xl"><ArrowsRightLeftIcon className="w-8 h-8 text-purple-600" /></div>
                   <div>
@@ -1028,7 +1186,7 @@ export default function App() {
               </div>
 
               {/* Disposal Records */}
-              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-red-500 hover:shadow-xl transition-shadow cursor-pointer" onClick={() => { setShowDisposalModal(true); fetchAllData(); }}>
+              <div className="bg-white rounded-2xl p-6 shadow-lg border-t-4 border-red-500 hover:shadow-xl transition-shadow cursor-pointer flex flex-col h-full" onClick={() => { resetModalDisposalPage(); setShowDisposalModal(true); fetchAllData(); }}>
                 <div className="flex items-center gap-4 mb-4">
                   <div className="p-3 bg-red-100 rounded-xl"><ArchiveBoxIcon className="w-8 h-8 text-red-600" /></div>
                   <div>
@@ -1036,8 +1194,8 @@ export default function App() {
                     <p className="text-xs text-gray-500">{disposals.length} disposed</p>
                   </div>
                 </div>
-                <p className="text-sm text-gray-600">View all disposed, scrapped, or retired assets.</p>
-                <button className="mt-4 w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm font-medium">View Disposals</button>
+                <p className="text-sm text-gray-600 mt-4 flex-grow">View all disposed, scrapped, or retired assets.</p>
+                <button className="w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm font-medium">View Disposals</button>
               </div>
             </div>
           </div>
@@ -1149,28 +1307,64 @@ export default function App() {
               {assetHistory.length === 0 ? (
                 <p className="text-center text-gray-500 py-8">No history records found.</p>
               ) : (
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Field</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Old Value</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">New Value</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {assetHistory.map((h, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-xs text-gray-600">{formatDate(h.changeDate)}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-gray-700">{h.propertyNumber || h.assetId}</td>
-                        <td className="px-4 py-3 text-xs text-gray-700 capitalize">{h.fieldChanged}</td>
-                        <td className="px-4 py-3 text-xs text-gray-500">{h.oldValue || '-'}</td>
-                        <td className="px-4 py-3 text-xs text-green-600">{h.newValue || '-'}</td>
+                <>
+                  <div className="mb-4 flex justify-between items-center">
+                    <p className="text-sm text-gray-600">
+                      Showing {((historyModalPage - 1) * historyModalPageSize) + 1} to {Math.min(historyModalPage * historyModalPageSize, assetHistory.length)} of {assetHistory.length} records
+                    </p>
+                  </div>
+                  
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Field</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Old Value</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">New Value</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y">
+                      {getPaginatedModalHistory().map((h, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-xs text-gray-600">{formatDate(h.changeDate)}</td>
+                          <td className="px-4 py-3 text-xs font-mono text-gray-700">{h.propertyNumber || h.assetId}</td>
+                          <td className="px-4 py-3 text-xs text-gray-700 capitalize">{h.fieldChanged}</td>
+                          <td className="px-4 py-3 text-xs text-gray-500">{h.oldValue || '-'}</td>
+                          <td className="px-4 py-3 text-xs text-green-600">{h.newValue || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {historyModalPage < getTotalModalHistoryPages() ? (
+                    <div className="mt-4 flex justify-center gap-3">
+                      {historyModalPage > 1 && (
+                        <button
+                          onClick={showLessModalHistory}
+                          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                        >
+                          Show Less ({Math.max((historyModalPage - 1) * historyModalPageSize, 10)} records)
+                        </button>
+                      )}
+                      <button
+                        onClick={loadMoreModalHistory}
+                        className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Load 10 More Records ({Math.min(historyModalPage * historyModalPageSize + 10, assetHistory.length)} of {assetHistory.length})
+                      </button>
+                    </div>
+                  ) : historyModalPage > 1 ? (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={showLessModalHistory}
+                        className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Show Less ({Math.max((historyModalPage - 1) * historyModalPageSize, 10)} records)
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
@@ -1200,30 +1394,66 @@ export default function App() {
                   <button onClick={handleGenerateDepreciation} className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700">Generate Depreciation Log</button>
                 </div>
               ) : (
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Year</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Beginning Value</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Depreciation</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Accumulated</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Ending Value</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {depreciationLog.map((d, i) => (
-                      <tr key={i} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-xs font-bold text-gray-700">{d.year}</td>
-                        <td className="px-4 py-3 text-xs font-mono text-gray-700">{d.propertyNumber || d.assetId}</td>
-                        <td className="px-4 py-3 text-xs text-gray-600">{formatCurrency(d.beginningBookValue)}</td>
-                        <td className="px-4 py-3 text-xs text-red-600">-{formatCurrency(d.depreciationExpense)}</td>
-                        <td className="px-4 py-3 text-xs text-orange-600">{formatCurrency(d.accumulatedDepreciation)}</td>
-                        <td className="px-4 py-3 text-xs font-bold text-green-600">{formatCurrency(d.endingBookValue)}</td>
+                <>
+                  <div className="mb-4 flex justify-between items-center">
+                    <p className="text-sm text-gray-600">
+                      Showing {((depreciationModalPage - 1) * depreciationModalPageSize) + 1} to {Math.min(depreciationModalPage * depreciationModalPageSize, depreciationLog.length)} of {depreciationLog.length} entries
+                    </p>
+                  </div>
+                  
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Year</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Beginning Value</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Depreciation</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Accumulated</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Ending Value</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y">
+                      {getPaginatedModalDepreciation().map((d, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-xs font-bold text-gray-700">{d.year}</td>
+                          <td className="px-4 py-3 text-xs font-mono text-gray-700">{d.propertyNumber || d.assetId}</td>
+                          <td className="px-4 py-3 text-xs text-gray-600">{formatCurrency(d.beginningBookValue)}</td>
+                          <td className="px-4 py-3 text-xs text-red-600">-{formatCurrency(d.depreciationExpense)}</td>
+                          <td className="px-4 py-3 text-xs text-orange-600">{formatCurrency(d.accumulatedDepreciation)}</td>
+                          <td className="px-4 py-3 text-xs font-bold text-green-600">{formatCurrency(d.endingBookValue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  
+                  {depreciationModalPage < getTotalModalDepreciationPages() ? (
+                    <div className="mt-4 flex justify-center gap-3">
+                      {depreciationModalPage > 1 && (
+                        <button
+                          onClick={showLessModalDepreciation}
+                          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                        >
+                          Show Less ({Math.max((depreciationModalPage - 1) * depreciationModalPageSize, 10)} entries)
+                        </button>
+                      )}
+                      <button
+                        onClick={loadMoreModalDepreciation}
+                        className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Load 10 More Entries ({Math.min(depreciationModalPage * depreciationModalPageSize + 10, depreciationLog.length)} of {depreciationLog.length})
+                      </button>
+                    </div>
+                  ) : depreciationModalPage > 1 ? (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={showLessModalDepreciation}
+                        className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Show Less ({Math.max((depreciationModalPage - 1) * depreciationModalPageSize, 10)} entries)
+                      </button>
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
@@ -1264,30 +1494,66 @@ export default function App() {
                 {transfers.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">No transfer records found.</p>
                 ) : (
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">From</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">To</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Reason</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">By</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {transfers.map((t, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-xs text-gray-600">{formatDate(t.transferDate)}</td>
-                          <td className="px-4 py-3 text-xs font-mono text-gray-700">{t.propertyNumber || t.assetId}</td>
-                          <td className="px-4 py-3 text-xs text-red-600">{t.fromOffice || '-'}</td>
-                          <td className="px-4 py-3 text-xs text-green-600">{t.toOffice}</td>
-                          <td className="px-4 py-3 text-xs text-gray-600">{t.transferReason}</td>
-                          <td className="px-4 py-3 text-xs text-gray-500">{t.transferredBy} → {t.receivedBy}</td>
+                  <>
+                    <div className="mb-4 flex justify-between items-center">
+                      <p className="text-sm text-gray-600">
+                        Showing {((transferModalPage - 1) * transferModalPageSize) + 1} to {Math.min(transferModalPage * transferModalPageSize, transfers.length)} of {transfers.length} transfers
+                      </p>
+                    </div>
+                    
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">From</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">To</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Reason</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">By</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y">
+                        {getPaginatedModalTransfers().map((t, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-xs text-gray-600">{formatDate(t.transferDate)}</td>
+                            <td className="px-4 py-3 text-xs font-mono text-gray-700">{t.propertyNumber || t.assetId}</td>
+                            <td className="px-4 py-3 text-xs text-red-600">{t.fromOffice || '-'}</td>
+                            <td className="px-4 py-3 text-xs text-green-600">{t.toOffice}</td>
+                            <td className="px-4 py-3 text-xs text-gray-600">{t.transferReason}</td>
+                            <td className="px-4 py-3 text-xs text-gray-500">{t.transferredBy} → {t.receivedBy}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    
+                    {transferModalPage < getTotalModalTransferPages() ? (
+                    <div className="mt-4 flex justify-center gap-3">
+                      {transferModalPage > 1 && (
+                        <button
+                          onClick={showLessModalTransfers}
+                          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                        >
+                          Show Less ({Math.max((transferModalPage - 1) * transferModalPageSize, 10)} transfers)
+                        </button>
+                      )}
+                      <button
+                        onClick={loadMoreModalTransfers}
+                        className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Load 10 More Transfers ({Math.min(transferModalPage * transferModalPageSize + 10, transfers.length)} of {transfers.length})
+                      </button>
+                    </div>
+                  ) : transferModalPage > 1 ? (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={showLessModalTransfers}
+                        className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Show Less ({Math.max((transferModalPage - 1) * transferModalPageSize, 10)} transfers)
+                      </button>
+                    </div>
+                  ) : null}  
+                  </>
                 )}
               </div>
             </div>
@@ -1336,32 +1602,68 @@ export default function App() {
                 {disposals.length === 0 ? (
                   <p className="text-center text-gray-500 py-8">No disposal records found.</p>
                 ) : (
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Method</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Reason</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Book Value</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Proceeds</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Approved By</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {disposals.map((d, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-xs text-gray-600">{formatDate(d.disposalDate)}</td>
-                          <td className="px-4 py-3 text-xs font-mono text-gray-700">{d.propertyNumber || d.assetId}</td>
-                          <td className="px-4 py-3 text-xs"><span className="bg-red-100 text-red-700 px-2 py-1 rounded-full">{d.disposalMethod}</span></td>
-                          <td className="px-4 py-3 text-xs text-gray-600">{d.disposalReason}</td>
-                          <td className="px-4 py-3 text-xs text-gray-600">{formatCurrency(d.bookValueAtDisposal)}</td>
-                          <td className="px-4 py-3 text-xs text-green-600">{formatCurrency(d.proceeds)}</td>
-                          <td className="px-4 py-3 text-xs text-gray-500">{d.approvedBy}</td>
+                  <>
+                    <div className="mb-4 flex justify-between items-center">
+                      <p className="text-sm text-gray-600">
+                        Showing {((disposalModalPage - 1) * disposalModalPageSize) + 1} to {Math.min(disposalModalPage * disposalModalPageSize, disposals.length)} of {disposals.length} disposals
+                      </p>
+                    </div>
+                    
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Date</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Property #</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Method</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Reason</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Book Value</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Proceeds</th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600">Approved By</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y">
+                        {getPaginatedModalDisposals().map((d, i) => (
+                          <tr key={i} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-xs text-gray-600">{formatDate(d.disposalDate)}</td>
+                            <td className="px-4 py-3 text-xs font-mono text-gray-700">{d.propertyNumber || d.assetId}</td>
+                            <td className="px-4 py-3 text-xs"><span className="bg-red-100 text-red-700 px-2 py-1 rounded-full">{d.disposalMethod}</span></td>
+                            <td className="px-4 py-3 text-xs text-gray-600">{d.disposalReason}</td>
+                            <td className="px-4 py-3 text-xs text-gray-600">{formatCurrency(d.bookValueAtDisposal)}</td>
+                            <td className="px-4 py-3 text-xs text-green-600">{formatCurrency(d.proceeds)}</td>
+                            <td className="px-4 py-3 text-xs text-gray-500">{d.approvedBy}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    
+                    {disposalModalPage < getTotalModalDisposalPages() ? (
+                    <div className="mt-4 flex justify-center gap-3">
+                      {disposalModalPage > 1 && (
+                        <button
+                          onClick={showLessModalDisposals}
+                          className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                        >
+                          Show Less ({Math.max((disposalModalPage - 1) * disposalModalPageSize, 10)} disposals)
+                        </button>
+                      )}
+                      <button
+                        onClick={loadMoreModalDisposals}
+                        className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Load 10 More Disposals ({Math.min(disposalModalPage * disposalModalPageSize + 10, disposals.length)} of {disposals.length})
+                      </button>
+                    </div>
+                  ) : disposalModalPage > 1 ? (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={showLessModalDisposals}
+                        className="px-6 py-3 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
+                      >
+                        Show Less ({Math.max((disposalModalPage - 1) * disposalModalPageSize, 10)} disposals)
+                      </button>
+                    </div>
+                  ) : null}  
+                  </>
                 )}
               </div>
             </div>
@@ -1434,7 +1736,7 @@ export default function App() {
               </div>
               
               <div ref={printRef} className="border-2 border-gray-800 p-4 text-xs">
-                <div className="flex mb-2">
+                <div className="flex mb-3">
                   <div className="w-16"></div>
                   <div className="text-center flex-1">
                     <h3 className="font-bold text-sm">PROPERTY, PLANT AND EQUIPMENT LEDGER CARD</h3>
@@ -1445,85 +1747,70 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4 mb-2">
+                <div className="grid grid-cols-2 gap-4 mb-3">
                   <div><span className="font-bold">Entity Name:</span> <span className="border-b border-gray-400 inline-block min-w-[200px]">{coAsset.entityName || 'DENR - Provincial Environment and Natural Resources Office (PENRO)'}</span></div>
                   <div><span className="font-bold">Fund Cluster:</span> <span className="border-b border-gray-400 inline-block min-w-[100px]">{coAsset.fundCluster || 'Regular Agency Fund'}</span></div>
                 </div>
                 
-                <div className="border border-gray-800 mb-2 p-2">
-                  <div className="mb-1"><span className="font-bold">Property, Plant and Equipment:</span></div>
+                <div className="border border-gray-800 mb-3 p-4">
+                  <div className="mb-3"><span className="font-bold">Property, Plant and Equipment:</span></div>
                   <div className="ml-4"><span className="font-bold">Property Type:</span> {coAsset.propertyType}</div>
                   <div className="ml-4"><span className="font-bold">Description:</span> {coAsset.description}</div>
                 </div>
                 
-                <div className="border border-gray-800 mb-2 p-2 grid grid-cols-2 gap-x-4 gap-y-1">
+                <div className="border border-gray-800 mb-3 p-3 grid grid-cols-2 gap-x-4 gap-y-2">
                   <div className="col-span-2"><span className="font-bold">Object Account Code:</span> {coAsset.accountCode}</div>
-                  <div><span className="font-bold">Estimated Useful Life:</span> {coAsset.usefulLife} years</div>
-                  <div><span className="font-bold">Rate of Depreciation:</span> {coAsset.depreciationRate || coAsset.depreciableAmount}</div>
+                  <div><span className="font-bold">Estimated Useful Life:</span> {(coAsset.ppeClass && (coAsset.ppeClass.includes('Construction in Progress') || coAsset.ppeClass === 'Land')) ? '0 years' : (coAsset.usefulLife ? `${coAsset.usefulLife} years` : '-')}</div>
+                  <div><span className="font-bold">Rate of Depreciation:</span> {coAsset.ppeClass && (coAsset.ppeClass.includes('Construction in Progress') || coAsset.ppeClass === 'Land' || coAsset.ppeClass === 'Land Improvements, Reforestation Projects') ? '0%' : (coAsset.depreciationRate ? `${coAsset.depreciationRate}%` : '-')}</div>
                 </div>
                 
                 <table className="w-full text-[10px] border-collapse border border-gray-800">
                   <thead className="bg-gray-200">
                     <tr>
-                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Date</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Reference</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" colSpan={3}>Receipt</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Accumulated Depreciation</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Accumulated Impairment Losses</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Issues/ Transfers/ Adjustments</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" rowSpan={2}>Adjusted Cost</th>
-                      <th className="border border-gray-800 px-1 py-1 text-center" colSpan={2}>Repair History</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" rowSpan={2}>Date</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" rowSpan={2}>Reference</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" colSpan={3}>Receipt</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" rowSpan={2}>Accumulated Depreciation</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" rowSpan={2}>Accumulated Impairment Losses</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" rowSpan={2}>Issues/ Transfers/ Adjustments</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" rowSpan={2}>Adjusted Cost</th>
+                      <th className="border border-gray-800 px-3 py-3 text-center" colSpan={2}>Repair History</th>
                     </tr>
                     <tr>
-                      <th className="border border-gray-800 px-1 py-0.5 text-center">Qty.</th>
-                      <th className="border border-gray-800 px-1 py-0.5 text-center">Unit Cost</th>
-                      <th className="border border-gray-800 px-1 py-0.5 text-center">Total Cost</th>
-                      <th className="border border-gray-800 px-1 py-0.5 text-center">Nature of Repair</th>
-                      <th className="border border-gray-800 px-1 py-0.5 text-center">Amount</th>
+                      <th className="border border-gray-800 px-3 py-2 text-center">Qty.</th>
+                      <th className="border border-gray-800 px-3 py-2 text-center">Unit Cost</th>
+                      <th className="border border-gray-800 px-3 py-2 text-center">Total Cost</th>
+                      <th className="border border-gray-800 px-3 py-2 text-center">Nature of Repair</th>
+                      <th className="border border-gray-800 px-3 py-2 text-center">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-gray-800 px-1 py-1">{coAsset.dateAcquired ? new Date(coAsset.dateAcquired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</td>
-                      <td className="border border-gray-800 px-1 py-1">{coAsset.propertyNumber}</td>
-                      <td className="border border-gray-800 px-1 py-1 text-center">{coAsset.quantity || 1}</td>
-                      <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(coAsset.unitCost)}</td>
-                      <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(coAsset.totalCost || coAsset.unitCost)}</td>
-                      <td className="border border-gray-800 px-1 py-1 text-right">-</td>
-                      <td className="border border-gray-800 px-1 py-1 text-right">-</td>
-                      <td className="border border-gray-800 px-1 py-1 text-right">-</td>
-                      <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(coAsset.totalCost || coAsset.unitCost)}</td>
-                      <td className="border border-gray-800 px-1 py-1"></td>
-                      <td className="border border-gray-800 px-1 py-1"></td>
+                      <td className="border border-gray-800 px-3 py-3">{coAsset.dateAcquired ? new Date(coAsset.dateAcquired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : ''}</td>
+                      <td className="border border-gray-800 px-3 py-3">{coAsset.propertyNumber}</td>
+                      <td className="border border-gray-800 px-3 py-3 text-center">{coAsset.quantity || 1}</td>
+                      <td className="border border-gray-800 px-3 py-3 text-right">{formatCurrency(coAsset.unitCost)}</td>
+                      <td className="border border-gray-800 px-3 py-3 text-right">{formatCurrency(coAsset.totalCost || coAsset.unitCost)}</td>
+                      <td className="border border-gray-800 px-3 py-3 text-right">-</td>
+                      <td className="border border-gray-800 px-3 py-3 text-right">-</td>
+                      <td className="border border-gray-800 px-3 py-3 text-right">-</td>
+                      <td className="border border-gray-800 px-3 py-3 text-right">{formatCurrency(coAsset.totalCost || coAsset.unitCost)}</td>
+                      <td className="border border-gray-800 px-3 py-3"></td>
+                      <td className="border border-gray-800 px-3 py-3"></td>
                     </tr>
                     {depreciationLog.filter(d => d.assetId === coAsset.id).sort((a, b) => a.year - b.year).map((d, i) => (
                       <tr key={i}>
-                        <td className="border border-gray-800 px-1 py-1">{d.year}</td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(d.accumulatedDepreciation)}</td>
-                        <td className="border border-gray-800 px-1 py-1 text-right">-</td>
-                        <td className="border border-gray-800 px-1 py-1 text-right">-</td>
-                        <td className="border border-gray-800 px-1 py-1 text-right">{formatCurrency(d.endingBookValue)}</td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                      </tr>
-                    ))}
-                    {Array.from({ length: Math.max(0, 15 - depreciationLog.filter(d => d.assetId === coAsset.id).length) }).map((_, i) => (
-                      <tr key={`empty-${i}`}>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
-                        <td className="border border-gray-800 px-1 py-1"></td>
+                        <td className="border border-gray-800 px-3 py-3">{d.year}</td>
+                        <td className="border border-gray-800 px-3 py-3"></td>
+                        <td className="border border-gray-800 px-3 py-3"></td>
+                        <td className="border border-gray-800 px-3 py-3"></td>
+                        <td className="border border-gray-800 px-3 py-3"></td>
+                        <td className="border border-gray-800 px-3 py-3 text-right">{formatCurrency(d.accumulatedDepreciation)}</td>
+                        <td className="border border-gray-800 px-3 py-3 text-right">-</td>
+                        <td className="border border-gray-800 px-3 py-3 text-right">-</td>
+                        <td className="border border-gray-800 px-3 py-3 text-right">{formatCurrency(d.endingBookValue)}</td>
+                        <td className="border border-gray-800 px-3 py-3"></td>
+                        <td className="border border-gray-800 px-3 py-3"></td>
                       </tr>
                     ))}
                   </tbody>
