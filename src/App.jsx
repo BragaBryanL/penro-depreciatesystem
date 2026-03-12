@@ -599,15 +599,7 @@ export default function App() {
           // Cost fields - handle both "Unit Cost" and "Cost" columns
           const unitCost = getNum(['Unit Cost', 'unitCost', 'UnitCost', 'Cost', 'cost', 'UnitPrice']) || 0;
           const residualValue = getNum(['Residual Value', 'residualValue', 'ResidualValue', 'Salvage Value', 'salvageValue']) || 0;
-          const usefulLife = getNum(['Useful Life (Years)', 'Useful Life', 'usefulLife', 'Life', 'UsefulLife', 'Years']);
-          
-          // For Construction in Progress and Land assets, set useful life to null/0
-          if (ppeClass && (ppeClass.includes('Construction in Progress') || ppeClass === 'Land')) {
-            // Don't set a default useful life for Construction in Progress and Land
-          } else if (!usefulLife) {
-            // Only set default to 5 for other assets if no useful life is found
-            usefulLife = 5;
-          }
+          let usefulLife = getNum(['Useful Life (Years)', 'Useful Life', 'usefulLife', 'Life', 'UsefulLife', 'Years']) || 0;
           const depreciableAmount = getNum(['Depreciable Amount', 'depreciableAmount', 'DepreciableAmount']) || 0;
           const accumulatedDepreciation = getNum(['Accumulated Depreciation', 'accumulatedDepreciation', 'AccumulatedDepreciation', 'Accum Depr']) || 0;
           const netBookValue = getNum(['Net Book Value', 'netBookValue', 'NetBookValue', 'Book Value']) || 0;

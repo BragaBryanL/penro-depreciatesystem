@@ -666,14 +666,14 @@ app.post("/api/assets/fix-construction-useful-life", async (req, res) => {
   const db = await dbPromise;
   
   try {
-    // Update all Construction in Progress assets to have null useful life
+    // Update all Construction in Progress assets to have 0 useful life
     await db.run(
-      `UPDATE assets SET usefulLife = NULL WHERE ppeClass LIKE '%Construction in Progress%'`
+      `UPDATE assets SET usefulLife = 0 WHERE ppeClass LIKE '%Construction in Progress%'`
     );
     
-    // Update all Land assets to have null useful life
+    // Update all Land assets to have 0 useful life
     await db.run(
-      `UPDATE assets SET usefulLife = NULL WHERE ppeClass = 'Land' OR accountCode = '10601010'`
+      `UPDATE assets SET usefulLife = 0 WHERE ppeClass = 'Land' OR accountCode = '10601010'`
     );
     
     // Clear existing depreciation log for these assets
